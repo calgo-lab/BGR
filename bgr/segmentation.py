@@ -23,6 +23,26 @@ def center_crop(img_file, x_len, y_len):
     return img[upper:lower, left:right]
 
 
+# Definiere die Custom-Transformation für das Zuschneiden des Bildes
+class CenterCropTransform:
+    def __init__(self, crop_width=240, crop_height=450):
+        self.crop_width = crop_width
+        self.crop_height = crop_height
+
+    def __call__(self, img):
+        # Bildgröße ermitteln
+        width, height = img.size
+
+        # Berechne die Koordinaten für den zentrierten Ausschnitt
+        left = (width - self.crop_width) // 2
+        upper = (height - self.crop_height) // 2
+        right = left + self.crop_width
+        lower = upper + self.crop_height
+
+        # Zuschnitt des Bildes
+        return img.crop((left, upper, right, lower))
+
+
 def remove_ruler(image):
 
     # Convert to grayscale
