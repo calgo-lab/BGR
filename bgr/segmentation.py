@@ -71,6 +71,36 @@ def remove_ruler(image):
     return cropped_image
 
 
+def remove_sky(img_path, thresh=250, closing_kernel_size=30):
+    """thresh should be chosen fairly high (close to white)
+    """
+
+    img = cv2.imread(img_path)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # Blur the gray image (to smoothen out further isolated white regions not belonging to the sky)
+    img_blur = cv2.GaussianBlur(gray, (15, 15), 20)
+
+    # Separate sky background (marked black) from soil (marked white)
+    _, thresh_img = cv2.threshold(img_blur, thresh, 255, cv2.THRESH_BINARY_INV)
+
+    # Apply morphological closing to remove small noise
+    kernel = np.ones((closing_kernel_size, closing_kernel_size), np.uint8)
+    closed_mask = cv2.morphologyEx(thresh_img, cv2.MORPH_CLOSE, kernel)
+
+    # Find the indices of the sky pixels (black)
+    sky_indices = np.where(closed_mask == 0)
+
+    # If there are at least 10k black pixels left after closing, then accept them as sky background and crop
+    if len(sky_indices[0] > 10 ** 4):
+
+        # Find the maximum y-coordinate (row index) of the sky pixels
+        lower_bound = np.max(sky_indices[0])
+        return img[lower_bound:, :]
+    else:
+        return img
+
+
 def create_rect_mask(height, width, untergrenze_list):
 
     mask = np.zeros((height, width), dtype=int)
