@@ -3,7 +3,7 @@ from torch.utils.data import Dataset
 from PIL import Image
 
 
-def simplify_string(complex_string, mapping_df, col_name = 'stark vereinfacht'):
+def simplify_string(complex_string, mapping_df, col_name):
     """Simplifies a complex string based on the mapping
 
     :param complex_string:
