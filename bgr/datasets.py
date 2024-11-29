@@ -38,17 +38,17 @@ def encode_categorical_columns(df, col_name):
 class ImageTabularDataset(Dataset):
     def __init__(self,
                  dataframe,
-                 transform=None,
+                 normalize=None,
                  image_path=None,
                  label=None,
                  feature_columns=None
                  ):
         """
         dataframe: Pandas DataFrame mit Bildpfaden, tabellarischen Daten und Labels
-        transform: Bildtransformationen
+        normalize: Operations to normalize images
         """
         self.dataframe = dataframe
-        self.transform = transform
+        self.normalize = normalize
         self.image_path = image_path
         self.label = label
         self.feature_columns = feature_columns
@@ -65,8 +65,8 @@ class ImageTabularDataset(Dataset):
         image = Image.open(image_path)
 
         # Wende Bildtransformationen an, falls vorhanden
-        if self.transform:
-            image = self.transform(image)
+        if self.normalize:
+            image = self.normalize(image)
 
         # Extrahiere die tabellarischen Daten (numerische Features) aus dem DataFrame
         tabular_features_array = self.dataframe.iloc[idx][self.feature_columns].astype(float).values
