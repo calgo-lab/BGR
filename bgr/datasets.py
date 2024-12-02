@@ -1,4 +1,5 @@
 import torch
+from torchvision import transforms
 from torch.utils.data import Dataset
 from PIL import Image
 
@@ -38,7 +39,9 @@ def encode_categorical_columns(df, col_name):
 class ImageTabularDataset(Dataset):
     def __init__(self,
                  dataframe,
+                 image_size=(224, 224),  # Default size for ViT
                  normalize=None,
+                 augment=[],
                  image_path=None,
                  label=None,
                  feature_columns=None
@@ -48,31 +51,48 @@ class ImageTabularDataset(Dataset):
         normalize: Operations to normalize images
         """
         self.dataframe = dataframe
+        self.image_size = image_size
         self.normalize = normalize
+        self.augment = augment
         self.image_path = image_path
         self.label = label
         self.feature_columns = feature_columns
 
+        # Precompute a list of (index, augmentation) tuples to represent the expanded dataset
+        self.index_map = []
+        for idx in range(len(self.dataframe)):
+            # Original image
+            self.index_map.append((idx, lambda x: x)) # Identity function for no augmentation
+            # Augmented images
+            for aug in self.augment:
+                self.index_map.append((idx, aug))
+
     def __len__(self):
         # Länge des Datasets (Anzahl der Zeilen im DataFrame)
-        return len(self.dataframe)
+        return len(self.index_map)
 
-    def __getitem__(self, idx):
-        # Extrahiere den Bildpfad aus dem DataFrame
-        image_path = self.dataframe.iloc[idx][self.image_path]
+    def __getitem__(self, expanded_idx):
+        # Get the original dataframe index and the augmentation to apply
+        original_idx, augmentation = self.index_map[expanded_idx]
 
-        # Lade das Bild
+        # Extract the image path from the DataFrame, read and resize image
+        image_path = self.dataframe.iloc[original_idx][self.image_path]
         image = Image.open(image_path)
+        image = transforms.Resize(self.image_size)(image)
 
-        # Wende Bildtransformationen an, falls vorhanden
+        # Apply augmentation if specified
+        if augmentation:
+            image = augmentation(image)
+
+        # Apply normalization if provided
         if self.normalize:
             image = self.normalize(image)
 
-        # Extrahiere die tabellarischen Daten (numerische Features) aus dem DataFrame
-        tabular_features_array = self.dataframe.iloc[idx][self.feature_columns].astype(float).values
+        # Extract tabular features from the DataFrame (as numerical values)
+        tabular_features_array = self.dataframe.iloc[original_idx][self.feature_columns].astype(float).values
         tabular_features = torch.tensor(tabular_features_array, dtype=torch.float32)
 
-        # Extrahiere das Label
-        label = torch.tensor(self.dataframe.iloc[idx][self.label], dtype=torch.long)  # Für Klassifikation (long)
+        # Extract the label
+        label = torch.tensor(self.dataframe.iloc[original_idx][self.label], dtype=torch.long)  # for classification (long)
 
         return image, tabular_features, label
