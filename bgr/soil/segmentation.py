@@ -101,18 +101,18 @@ def remove_sky(img_path, thresh=250, closing_kernel_size=30):
         return img
 
 
-def create_rect_mask(height, width, untergrenze_list):
+def create_rect_mask(height, width, lowbound_list):
 
     mask = np.zeros((height, width), dtype=int)
     current_region = 0
 
     # Some horizons have the lowest cutoff below -1 meter in the images
     # Add an extra border at 100 to avoid errors when drawing the rectangles
-    if np.max(untergrenze_list) < 100.:
-        untergrenze_list.append(100.)
+    if np.max(lowbound_list) < 100.:
+        lowbound_list.append(100.)
 
     for i in range(height):
-        if i > untergrenze_list[current_region] * height/100.:
+        if i > lowbound_list[current_region] * height/100.:
             current_region += 1
 
         mask[i, :] = current_region+1
@@ -120,10 +120,10 @@ def create_rect_mask(height, width, untergrenze_list):
     return mask
 
 
-def group_patches(untergrenze_list, seg_mask):
+def group_patches(lowbound_list, seg_mask):
 
     height = seg_mask.shape[0] # same as original image
-    untergrenze_pix_y = np.asarray(untergrenze_list) * height/100
+    lowbound_pix_y = np.asarray(lowbound_list) * height/100
 
     combi_mask = np.zeros_like(seg_mask)
     for patch_id in np.unique(seg_mask):
@@ -133,11 +133,11 @@ def group_patches(untergrenze_list, seg_mask):
 
         # Check whether the patch is intersecting any of the rectangle borders
         # It would mean that a boundary lies between the minimal and maximal row index of that patch
-        intersecting_border = [ u for u in untergrenze_pix_y if np.min(patch_inds[0]) <= u <= np.max(patch_inds[0]) ]
+        intersecting_border = [ u for u in lowbound_pix_y if np.min(patch_inds[0]) <= u <= np.max(patch_inds[0]) ]
         if not intersecting_border:
             # Get the index of the first rectangle border that is below the lowest row index of the patch
-            next_lower_border = np.min([u for u in untergrenze_pix_y if u > np.max(patch_inds[0])])
-            combi_mask[patch_inds] = np.where(untergrenze_pix_y == next_lower_border)[0]
+            next_lower_border = np.min([u for u in lowbound_pix_y if u > np.max(patch_inds[0])])
+            combi_mask[patch_inds] = np.where(lowbound_pix_y == next_lower_border)[0]
 
         # Check whether the patch has more pixels in the rectangle above or below the border
         # Count how many row indexes are above the y coord of the intersecting border and below
@@ -147,8 +147,8 @@ def group_patches(untergrenze_list, seg_mask):
             num_pix_below = np.count_nonzero(patch_inds[0] > intersecting_border[0])
 
             if num_pix_above > num_pix_below:
-                combi_mask[patch_inds] = np.where(untergrenze_pix_y == intersecting_border[0])[0]
+                combi_mask[patch_inds] = np.where(lowbound_pix_y == intersecting_border[0])[0]
             else:
-                combi_mask[patch_inds] = np.where(untergrenze_pix_y == intersecting_border[0])[0] + 1
+                combi_mask[patch_inds] = np.where(lowbound_pix_y == intersecting_border[0])[0] + 1
 
     return combi_mask
