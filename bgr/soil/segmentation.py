@@ -25,6 +25,9 @@ def center_crop(img_file, x_len, y_len):
 
 # Definiere die Custom-Transformation für das Zuschneiden des Bildes
 class CenterCropTransform:
+    """
+
+    """
     def __init__(self, crop_width=240, crop_height=450):
         self.crop_width = crop_width
         self.crop_height = crop_height
@@ -44,6 +47,11 @@ class CenterCropTransform:
 
 
 def remove_ruler(image):
+    """
+
+    :param image:
+    :return:
+    """
 
     # Convert to grayscale
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -102,6 +110,13 @@ def remove_sky(img_path, thresh=250, closing_kernel_size=30):
 
 
 def create_rect_mask(height, width, lowbound_list):
+    """
+
+    :param height:
+    :param width:
+    :param lowbound_list:
+    :return:
+    """
 
     mask = np.zeros((height, width), dtype=int)
     current_region = 0
@@ -121,6 +136,12 @@ def create_rect_mask(height, width, lowbound_list):
 
 
 def group_patches(lowbound_list, seg_mask):
+    """
+
+    :param lowbound_list:
+    :param seg_mask:
+    :return:
+    """
 
     height = seg_mask.shape[0] # same as original image
     lowbound_pix_y = np.asarray(lowbound_list) * height/100
@@ -152,3 +173,36 @@ def group_patches(lowbound_list, seg_mask):
                 combi_mask[patch_inds] = np.where(lowbound_pix_y == intersecting_border[0])[0] + 1
 
     return combi_mask
+
+
+def save_horizon_overlays(mask, original_image, base_dir, orig_file):
+    """
+    Splits a segmented soil mask into separate horizon overlays and saves them.
+
+    Parameters:
+        mask (np.ndarray): The segmented mask where each integer represents a horizon.
+        original_image (np.ndarray): The original image (same dimensions as the mask).
+
+    """
+
+    # Get the unique horizon values in the mask
+    unique_horizon_ids = np.unique(mask)
+
+    for horizon_id in unique_horizon_ids:
+        # Create a binary mask for the current horizon
+        binary_mask = np.where(mask == horizon_id, 1, 0).astype(np.uint8)
+
+        # Expand the binary mask to 3 channels for filtering
+        binary_mask_3c = cv2.merge([binary_mask] * 3)
+
+        # Filter the original image using the binary mask
+        filtered_image = original_image * binary_mask_3c
+        filtered_image = cv2.cvtColor(filtered_image, cv2.COLOR_RGB2BGR)
+
+        # Construct new file names for each horizon patch
+        jpg_orig = orig_file.split('/')[-1]
+        jpg_base, jpg_ext = jpg_orig.split('.')
+        horizon_file = jpg_base + '_hor' + str(horizon_id+1) + '.' + jpg_ext # id+1 to match ids in horizons table
+
+        # Save the overlay as an image
+        cv2.imwrite(base_dir + horizon_file, filtered_image)
