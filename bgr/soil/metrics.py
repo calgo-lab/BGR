@@ -17,6 +17,7 @@ def top_k_accuracy(outputs, labels, k=5):
     # Sum up the correct matches and return the mean accuracy
     return correct.any(dim=1).float().mean().item()
 
+
 class TopKLoss(nn.Module):
     """
 
@@ -35,3 +36,24 @@ class TopKLoss(nn.Module):
         # Compute loss only for the top-k classes
         loss = -top_k_probabilities[target_mask].mean()
         return loss
+
+
+def depth_marker_loss(pred_seq, target_seq, mask):
+    # Smooth L1 Loss or MSE for regression
+    loss = F.smooth_l1_loss(pred_seq * mask, target_seq * mask, reduction="sum")
+    loss /= mask.sum()  # Normalize by the number of valid elements
+    return loss
+
+
+def depth_tabular_loss(pred_depth, true_depth, pred_tabular, true_tabular):
+    """
+
+    :param pred_depth:
+    :param true_depth:
+    :param pred_tabular:
+    :param true_tabular:
+    :return:
+    """
+    depth_loss = F.smooth_l1_loss(pred_depth, true_depth)
+    tabular_loss = F.mse_loss(pred_tabular, true_tabular)
+    return depth_loss + tabular_loss
