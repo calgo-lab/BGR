@@ -66,7 +66,7 @@ class ImageEncoder(nn.Module):
 
 # Geospatial and Temporal Encoder for features in df_loc
 class GeoTemporalEncoder(nn.Module):
-    def __init__(self, input_dim, hidden_dim=32):
+    def __init__(self, input_dim, hidden_dim):
         super(GeoTemporalEncoder, self).__init__()
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
