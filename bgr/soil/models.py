@@ -66,60 +66,89 @@ class ImageEncoder(nn.Module):
 
 # Geospatial and Temporal Encoder for features in df_loc
 class GeoTemporalEncoder(nn.Module):
-    def __init__(self, input_dim, hidden_dim):
+    def __init__(self, input_dim, output_dim):
         super(GeoTemporalEncoder, self).__init__()
-        self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dim, 64),
+            nn.ReLU(),
+            nn.Linear(64, output_dim),
+            nn.ReLU()
+        )
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        return x
+        return self.encoder(x)
 
 
 class DepthMarkerPredictor(nn.Module):
-    def __init__(self, input_dim, hidden_dim, max_seq_len):
+    def __init__(self, input_dim, transformer_dim=128, num_heads=4, num_layers=2, max_seq_len=10, stop_token=100):
         super(DepthMarkerPredictor, self).__init__()
-        self.rnn = nn.LSTM(input_dim, hidden_dim, batch_first=True)
-        self.fc = nn.Linear(hidden_dim, 1)  # Predicting one depth marker at a time
+        self.fc = nn.Sequential(
+            nn.Linear(input_dim, transformer_dim),
+            nn.ReLU(),
+            nn.Linear(transformer_dim, transformer_dim)
+        )
+        self.transformer = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(d_model=transformer_dim, nhead=num_heads), num_layers=num_layers
+        )
+        self.predictor = nn.Linear(transformer_dim, 1) # Predict depth per step
         self.max_seq_len = max_seq_len
+        self.stop_token = stop_token
 
-    def forward(self, x, teacher_forcing=False, target_seq=None):
-        #batch_size = x.size(0)
+    def forward(self, features):
+        depth_input = self.fc(features).unsqueeze(0).repeat(self.max_seq_len, 1, 1)
+        transformer_output = self.transformer(depth_input)
+        depth_predictions = self.predictor(transformer_output).squeeze(-1)  # (max_seq_len, batch_size)
+
+        # Mask outputs based on stop token
         outputs = []
-        hidden = None
+        for batch_idx in range(depth_predictions.size(1)):
+            depth_list = []
+            for step_idx in range(depth_predictions.size(0)):
+                value = depth_predictions[step_idx, batch_idx].item()
+                if value >= self.stop_token:
+                    break
+                depth_list.append(value)
+            outputs.append(depth_list)
 
-        # Autoregressive generation
-        for t in range(self.max_seq_len):
-            if t == 0 or not teacher_forcing:
-                input_step = x if t == 0 else outputs[-1].detach()
-            else:
-                input_step = target_seq[:, t-1].unsqueeze(1)  # Use ground truth for teacher forcing
-
-            output, hidden = self.rnn(input_step, hidden)
-            depth_marker = self.fc(output).squeeze(-1)  # Shape: (batch_size, 1)
-            outputs.append(depth_marker)
-
-        return torch.stack(outputs, dim=1)  # Shape: (batch_size, max_seq_len)
+        return outputs
 
 
 class TabularPropertyPredictor(nn.Module):
     def __init__(self, input_dim, output_dim):
         super(TabularPropertyPredictor, self).__init__()
-        self.fc1 = nn.Linear(input_dim, 128)
-        self.fc2 = nn.Linear(128, output_dim)
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, output_dim)
+        )
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        return self.fc2(x)
+        return self.encoder(x)
 
+
+class HorizonEmbedder(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(HorizonEmbedder, self).__init__()
+        self.embedder = nn.Sequential(
+            nn.Linear(input_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, output_dim)
+        )
+
+    def forward(self, x):
+        return self.embedder(x)
 
 class HorizonClassifier(nn.Module):
-    def __init__(self, geo_temp_input_dim, geo_temp_hidden_dim, rnn_hidden_dim):#, tabular_output_dim):
+    def __init__(self, geo_temp_input_dim, geo_temp_output_dim=32, transformer_dim=128, num_transformer_heads=4, num_transformer_layers=2,
+                 max_seq_len=10, stop_token=100):#embedding_dim=64):
         super(HorizonClassifier, self).__init__()
         self.image_encoder = ImageEncoder()
-        self.geo_temp_encoder = GeoTemporalEncoder(geo_temp_input_dim, geo_temp_hidden_dim)
-        self.depth_marker_predictor = DepthMarkerPredictor(self.image_encoder.num_img_features + geo_temp_hidden_dim, rnn_hidden_dim)
+        self.geo_temp_encoder = GeoTemporalEncoder(geo_temp_input_dim, geo_temp_output_dim)
+        self.depth_marker_predictor = DepthMarkerPredictor(self.image_encoder.num_img_features + geo_temp_output_dim,
+                                                           transformer_dim, num_transformer_heads, num_transformer_layers,
+                                                           max_seq_len, stop_token)
         #self.tabular_property_predictor = TabularPropertyPredictor(image_feature_dim + geo_temp_hidden_dim, tabular_output_dim)
 
     def forward(self, image, geo_temp):

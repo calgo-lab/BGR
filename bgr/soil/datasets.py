@@ -92,7 +92,10 @@ class ImageTabularDataset(Dataset):
         tabular_features_array = self.dataframe.iloc[original_idx][self.feature_columns].astype(float).values
         tabular_features = torch.tensor(tabular_features_array, dtype=torch.float32)
 
-        # Extract the label
-        label = torch.tensor(self.dataframe.iloc[original_idx][self.label], dtype=torch.long)  # for classification (long)
+        # Extract the label if provided
+        if self.label:
+            label = torch.tensor(self.dataframe.iloc[original_idx][self.label], dtype=torch.long)  # for classification (long)
+            return image, tabular_features, label
+        else:
+            return image, tabular_features
 
-        return image, tabular_features, label
