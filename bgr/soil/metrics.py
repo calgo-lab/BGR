@@ -39,46 +39,44 @@ class TopKLoss(nn.Module):
         return loss
 
 
-def depth_marker_loss(predictions, targets, stop_token=100):
-    """
-    Computes the loss for the DepthMarkerPredictor.
+class DepthMarkerLoss(nn.Module):
 
-    Args:
-        predictions: Tensor of shape (pred_len, batch_size), predicted depth markers.
-        targets: List of variable-length tensors (batch_size), true depth markers.
-        stop_token: Value of the stop token.
+    def __init__(self, stop_token=100):
+        super(DepthMarkerLoss, self).__init__()
+        self.stop_token = stop_token
 
-    Returns:
-        loss: Scalar loss value.
-    """
-    batch_size = len(targets)
-    pred_len = predictions.size(0)
+    def forward(self, predictions, targets):
+        """
+        Computes the loss for the DepthMarkerPredictor.
 
-    loss = 0.0
-    total_valid_steps = 0
+        Args:
+            predictions: List of predicted depth markers. Contains batch_size lists of variable lengths.
+            targets: List of true depth markers. Contains batch_size lists of variable lengths.
+            stop_token: Value of the stop token.
 
-    for batch_idx in range(batch_size):
-        true_depths = targets[batch_idx]
-        num_true_steps = len(true_depths)
+        Returns:
+            loss: Scalar loss value.
+        """
+        batch_size = len(targets)
+        loss = 0.0
 
-        # Mask for valid steps
-        valid_steps = min(num_true_steps, pred_len)
-        mask = torch.arange(pred_len) < valid_steps
-        # example: torch.arange(2) < 3 is [True, True]
-        # while    torch.arange(3) < 2 is [True, True, False]
+        for batch_idx in range(batch_size):
+            true_depths = torch.Tensor(targets[batch_idx])
+            num_true_steps = len(true_depths)
 
-        # MSE Loss for valid steps
-        true_values = torch.zeros(pred_len, device=predictions.device)
-        true_values[:valid_steps] = true_depths
-        loss += torch.sum((predictions[:, batch_idx] - true_values) ** 2 * mask.float())
+            pred_depths = torch.Tensor(predictions[batch_idx])
+            pred_len = len(pred_depths) # can be higher or lower than it's supposed to be
 
-        # Stop Token Penalty
-        if valid_steps < pred_len:
-            loss += (predictions[valid_steps, batch_idx] - stop_token) ** 2
-            total_valid_steps += 1  # Count the stop token penalty as an extra step
+            valid_steps = min(num_true_steps, pred_len)
 
-        total_valid_steps += valid_steps
+            # MSE Loss for valid steps
+            loss += torch.norm(pred_depths[:valid_steps] - true_depths[:valid_steps], p=2) ** 2
 
-    # Average loss over all valid steps
-    loss /= total_valid_steps
-    return loss
+            # Stop Token Penalty
+            #if valid_steps < pred_len:
+            #    loss += (pred_depths[valid_steps] - stop_token) ** 2
+            #    total_valid_steps += 1  # Count the stop token penalty as an extra step
+
+        # Average loss over all valid steps
+        loss /= batch_size
+        return loss
