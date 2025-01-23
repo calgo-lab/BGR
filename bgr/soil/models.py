@@ -94,23 +94,32 @@ class DepthMarkerPredictor(nn.Module):
         self.max_seq_len = max_seq_len
         self.stop_token = stop_token
 
-    def forward(self, features):
-        depth_input = self.fc(features).unsqueeze(0).repeat(self.max_seq_len, 1, 1)
-        transformer_output = self.transformer(depth_input)
-        depth_predictions = self.predictor(transformer_output).squeeze(-1)  # (max_seq_len, batch_size)
+    def forward(self, x):
+        x = self.fc(x).unsqueeze(0).repeat(self.max_seq_len, 1, 1)
+        x = self.transformer(x)
+        x = self.predictor(x).squeeze(-1)  # (max_seq_len, batch_size)
 
+        """
         # Mask outputs based on stop token
-        outputs = []
+        outputs, masks = [], []
         for batch_idx in range(depth_predictions.size(1)):
-            depth_list = []
+            depth_list, mask = [], []
             for step_idx in range(depth_predictions.size(0)):
-                value = depth_predictions[step_idx, batch_idx].item()
-                if value >= self.stop_token:
+                value = depth_predictions[step_idx, batch_idx]#.item()
+                if value.item() >= self.stop_token:
                     break
                 depth_list.append(value)
-            outputs.append(depth_list)
+                mask.append(1)
 
-        return outputs
+            # Padding with stop token
+            pad_len = self.max_seq_len - len(depth_list)
+            depth_list.extend([self.stop_token] * pad_len) # fill in the list of predicted depths with stop tokens till max allowed size
+            mask.extend([0] * pad_len) # complete the mask list with 0's for the overflow
+            outputs.append(torch.tensor(depth_list, device=features.device))
+            masks.append(torch.tensor(mask, device=features.device))
+
+        return torch.stack(outputs), torch.stack(masks)"""
+        return torch.transpose(x, 0, 1)
 
 
 class TabularPropertyPredictor(nn.Module):
