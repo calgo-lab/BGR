@@ -68,7 +68,7 @@ class ImageTabularDataset(Dataset):
                 self.index_map.append((idx, aug))
 
     def __len__(self):
-        # Länge des Datasets (Anzahl der Zeilen im DataFrame)
+        # Dataset length (number of rows with or without augmentation)
         return len(self.index_map)
 
     def __getitem__(self, expanded_idx):

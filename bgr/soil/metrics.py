@@ -42,8 +42,9 @@ class TopKLoss(nn.Module):
 class DepthMarkerLoss(nn.Module):
     """MSE for padded tensors"""
 
-    def __init__(self):
+    def __init__(self):#, monotonicity_weight=1.0):
         super(DepthMarkerLoss, self).__init__()
+        #self.monotonicity_weight = monotonicity_weight
 
     def forward(self, predictions, targets, masks):
         """
@@ -52,5 +53,13 @@ class DepthMarkerLoss(nn.Module):
             targets: Tensor of shape (batch_size, max_seq_len), true depth markers.
             masks: Tensor of shape (batch_size, max_seq_len), valid position masks.
         """
-        loss = ((predictions - targets) ** 2 * masks).sum() / masks.sum()
-        return loss
+        # MSE for valid steps (up until the stop token)
+        mse_loss = ((predictions - targets) ** 2 * masks).sum() / masks.sum()
+
+        # Monotonicity term: the more increasing neighbors, the closer this term gets to 0
+        #mono_term = 1.0 - torch.relu(predictions[:, 1:] - predictions[:, :-1]).mean()
+
+        #total_loss = mse_loss + self.monotonicity_weight * mono_term
+
+        #return total_loss
+        return mse_loss
