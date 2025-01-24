@@ -40,6 +40,7 @@ class TopKLoss(nn.Module):
 
 
 class DepthMarkerLoss(nn.Module):
+    """MSE for padded tensors"""
 
     def __init__(self):
         super(DepthMarkerLoss, self).__init__()
@@ -53,43 +54,3 @@ class DepthMarkerLoss(nn.Module):
         """
         loss = ((predictions - targets) ** 2 * masks).sum() / masks.sum()
         return loss
-
-
-
-
-
-def forward_deprecated(self, predictions, targets):
-    """
-    Computes the loss for the DepthMarkerPredictor_Transformer.
-
-    Args:
-        predictions: List of predicted depth markers. Contains batch_size lists of variable lengths.
-        targets: List of true depth markers. Contains batch_size lists of variable lengths.
-        stop_token: Value of the stop token.
-
-    Returns:
-        loss: Scalar loss value.
-    """
-    batch_size = len(targets)
-    loss = 0.0
-
-    for batch_idx in range(batch_size):
-        true_depths = torch.Tensor(targets[batch_idx])
-        num_true_steps = len(true_depths)
-
-        pred_depths = torch.Tensor(predictions[batch_idx])
-        pred_len = len(pred_depths) # can be higher or lower than it's supposed to be
-
-        valid_steps = min(num_true_steps, pred_len)
-
-        # MSE Loss for valid steps
-        loss += torch.norm(pred_depths[:valid_steps] - true_depths[:valid_steps], p=2) ** 2
-
-        # Stop Token Penalty
-        #if valid_steps < pred_len:
-        #    loss += (pred_depths[valid_steps] - stop_token) ** 2
-        #    total_valid_steps += 1  # Count the stop token penalty as an extra step
-
-    # Average loss over all valid steps
-    loss /= batch_size
-    return loss

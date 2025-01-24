@@ -79,6 +79,7 @@ class GeoTemporalEncoder(nn.Module):
         return self.encoder(x)
 
 
+# ToDo: Should we give the model stop_token as input and replace all the values inits output with stop_token?
 class DepthMarkerPredictor(nn.Module):
     def __init__(self, input_dim, transformer_dim=128, num_heads=4, num_layers=2, max_seq_len=10, stop_token=100):
         super(DepthMarkerPredictor, self).__init__()
@@ -119,7 +120,7 @@ class DepthMarkerPredictor(nn.Module):
             masks.append(torch.tensor(mask, device=features.device))
 
         return torch.stack(outputs), torch.stack(masks)"""
-        return torch.transpose(x, 0, 1)
+        return torch.transpose(x, 0, 1) # (batch_size, max_seq_len)
 
 
 class TabularPropertyPredictor(nn.Module):
