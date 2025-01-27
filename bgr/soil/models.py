@@ -81,10 +81,9 @@ class GeoTemporalEncoder(nn.Module):
         return self.encoder(x)
 
 
-# ToDo: Should we give the model stop_token as input and replace all the values inits output with stop_token?
-class DepthMarkerPredictor(nn.Module):
+class TransformerDepthMarkerPredictor(nn.Module):
     def __init__(self, input_dim, transformer_dim=128, num_heads=4, num_layers=2, max_seq_len=10, stop_token=1.0):
-        super(DepthMarkerPredictor, self).__init__()
+        super(TransformerDepthMarkerPredictor, self).__init__()
         self.fc = nn.Sequential(
             nn.Linear(input_dim, transformer_dim),
             nn.BatchNorm1d(transformer_dim),
@@ -98,17 +97,17 @@ class DepthMarkerPredictor(nn.Module):
         )
         self.predictor = nn.Sequential(
             nn.Dropout(0.5),
-            nn.Linear(transformer_dim, max_seq_len)#1) # Predict depth per step
+            nn.Linear(transformer_dim, max_seq_len)
         )
         self.max_seq_len = max_seq_len
         self.stop_token = stop_token
 
     def forward(self, x):
-        x = self.fc(x).unsqueeze(0)#.repeat(self.max_seq_len, 1, 1)
+        x = self.fc(x).unsqueeze(0)
         x = self.transformer(x)
-        x = self.predictor(x).squeeze(-1)  # (max_seq_len, batch_size)
-        x = torch.transpose(x, 0, 1) # (batch_size, max_seq_len)
-        x = torch.sigmoid(x)
+        x = self.predictor(x).squeeze(-1)
+        x = torch.transpose(x, 0, 1)
+        x = torch.sigmoid(x).squeeze(1) # (batch_size, max_seq_len)
 
         """
         # Mask outputs based on stop token
@@ -133,6 +132,108 @@ class DepthMarkerPredictor(nn.Module):
         return x
 
 
+class TabularPropertyPredictor(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(TabularPropertyPredictor, self).__init__()
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, output_dim)
+        )
+
+    def forward(self, x):
+        return self.encoder(x)
+
+
+class HorizonEmbedder(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(HorizonEmbedder, self).__init__()
+        self.embedder = nn.Sequential(
+            nn.Linear(input_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, output_dim)
+        )
+
+    def forward(self, x):
+        return self.embedder(x)
+
+
+class LSTMDepthMarkerPredictor(nn.Module):
+    def __init__(self, input_dim, hidden_dim=256, max_seq_len=10, stop_token=1.0):
+        super(LSTMDepthMarkerPredictor, self).__init__()
+        self.hidden_dim = hidden_dim
+        self.max_seq_len = max_seq_len
+        self.stop_token = stop_token
+
+        # First fully connected layer (projecting the concatenated vector of image and geotemp features)
+        self.fc = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(0.2)
+        )
+
+        # Decoder - will store the previous predictions in the hidden state
+        self.rnn = nn.LSTM(input_size=hidden_dim, hidden_size=hidden_dim, batch_first=True,
+                           num_layers=1, dropout=0.0)
+
+        # Output Layer - predicts one depth at a time
+        self.predictor = nn.Linear(hidden_dim, 1)
+
+    def forward(self, x):
+        hidden_state = torch.zeros(1, x.size(0), self.hidden_dim).to(x.device)
+        cell_state   = torch.zeros(1, x.size(0), self.hidden_dim).to(x.device)
+        depth_markers = []
+
+        x = self.fc(x).unsqueeze(1) # (batch_size, 1, hidden_dim)
+        for _ in range(self.max_seq_len):
+            output, (hidden_state, cell_state) = self.rnn(x, (hidden_state, cell_state))
+            depth_marker = self.predictor(output).squeeze()
+            depth_markers.append(depth_marker)
+
+        # Pad the depth_markers list with stop_token if necessary
+        #num_missing_stripes = self.max_seq_len - len(depth_markers)
+        #if num_missing_stripes > 0:
+        #    depth_markers.extend([torch.full_like(depth_marker, self.stop_token)] * num_missing_stripes)
+
+        return torch.stack(depth_markers, dim=1)
+
+
+class HorizonClassifier(nn.Module):
+    def __init__(self,
+                 geo_temp_input_dim, geo_temp_output_dim=32, # params for geotemp encoder
+                 #transformer_dim=128, num_transformer_heads=4, num_transformer_layers=2, # params for Transformer- or CrossAttentionDepthPredictor
+                 rnn_hidden_dim=256, # params for LSTMDepthPredictor
+                 #embedding_dim=64,
+                 max_seq_len=10, stop_token=1.0):
+        super(HorizonClassifier, self).__init__()
+        self.image_encoder = ImageEncoder()
+        self.geo_temp_encoder = GeoTemporalEncoder(geo_temp_input_dim, geo_temp_output_dim)
+
+        # Choose from different depth predictors
+        #self.depth_marker_predictor = TransformerDepthMarkerPredictor(self.image_encoder.num_img_features + geo_temp_output_dim,
+        #                                                              transformer_dim, num_transformer_heads, num_transformer_layers,
+        #                                                              max_seq_len, stop_token)
+        self.depth_marker_predictor = LSTMDepthMarkerPredictor(self.image_encoder.num_img_features + geo_temp_output_dim,
+                                                               rnn_hidden_dim, max_seq_len, stop_token)
+
+        #self.tabular_property_predictor = TabularPropertyPredictor(image_feature_dim + geo_temp_hidden_dim, tabular_output_dim)
+
+    def forward(self, image, geo_temp, targets=None):
+        image_features = self.image_encoder(image)
+        geo_temp_features = self.geo_temp_encoder(geo_temp)
+        combined_features = torch.cat([image_features, geo_temp_features], dim=-1)
+        depth_markers = self.depth_marker_predictor(combined_features)#, targets=targets) # use targets for teacher forcing, only if DepthPredictor accepts it in forward()
+        #tabular_properties = self.tabular_property_predictor(combined_features)
+        return depth_markers#, tabular_properties
+
+
+### DEPRECATED ###
+# Problem: this one only predicts the same number throughout the depths list.
+# Aggressive regularization and adjusted loss only help insignificantly in varying the output.
+# By removing the .repeat() in forward and making self.fc_out predict max_seq_len depths, there is more variance in the predicted depths list,
+# but they still stay identical for all the samples. I did the same with the TransformerDepthPredictor above.
 class CrossAttentionDepthMarkerPredictor(nn.Module):
     def __init__(self, input_dim, transformer_dim=128, num_heads=4, num_layers=2,
                  max_seq_len=10, stop_token=1.0):
@@ -202,52 +303,3 @@ class CrossAttentionDepthMarkerPredictor(nn.Module):
 
         outputs = torch.cat(outputs, dim=-1)  # (batch_size, max_seq_len)
         return outputs
-
-
-class TabularPropertyPredictor(nn.Module):
-    def __init__(self, input_dim, output_dim):
-        super(TabularPropertyPredictor, self).__init__()
-        self.encoder = nn.Sequential(
-            nn.Linear(input_dim, 128),
-            nn.ReLU(),
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Linear(64, output_dim)
-        )
-
-    def forward(self, x):
-        return self.encoder(x)
-
-
-class HorizonEmbedder(nn.Module):
-    def __init__(self, input_dim, output_dim):
-        super(HorizonEmbedder, self).__init__()
-        self.embedder = nn.Sequential(
-            nn.Linear(input_dim, 128),
-            nn.ReLU(),
-            nn.Linear(128, output_dim)
-        )
-
-    def forward(self, x):
-        return self.embedder(x)
-
-class HorizonClassifier(nn.Module):
-    def __init__(self, geo_temp_input_dim, geo_temp_output_dim=32, transformer_dim=128, num_transformer_heads=4, num_transformer_layers=2,
-                 max_seq_len=10, stop_token=100):#embedding_dim=64):
-        super(HorizonClassifier, self).__init__()
-        self.image_encoder = ImageEncoder()
-        self.geo_temp_encoder = GeoTemporalEncoder(geo_temp_input_dim, geo_temp_output_dim)
-        self.depth_marker_predictor = CrossAttentionDepthMarkerPredictor(self.image_encoder.num_img_features + geo_temp_output_dim,
-                                                           transformer_dim, num_transformer_heads, num_transformer_layers,
-                                                           max_seq_len, stop_token)
-        #self.tabular_property_predictor = TabularPropertyPredictor(image_feature_dim + geo_temp_hidden_dim, tabular_output_dim)
-
-    def forward(self, image, geo_temp):
-        image_features = self.image_encoder(image)
-        geo_temp_features = self.geo_temp_encoder(geo_temp)
-        combined_features = torch.cat([image_features, geo_temp_features], dim=-1)
-        depth_markers = self.depth_marker_predictor(combined_features)
-        #tabular_properties = self.tabular_property_predictor(combined_features)
-        return depth_markers#, tabular_properties
-
-
