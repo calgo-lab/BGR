@@ -35,7 +35,19 @@ def encode_categorical_columns(df, col_name):
     df[col_name] = df[col_name].replace(counts.index, range(len(counts)))
 
 
-# Custom Dataset class für Bilder, tabellarische Daten und Labels
+def normalize_df_list(lst, max_boundary=100.0):
+    """
+    Rounds the last list item to a max. threshold and normalizes the whole list.
+    :param lst:
+    :param max_boundary:
+    :return:
+    """
+    lst[-1] = max_boundary
+    lst = [x/max_boundary for x in lst]
+    return lst
+
+
+# Custom Dataset class for images, tabular data and labels
 class ImageTabularDataset(Dataset):
     def __init__(self,
                  dataframe,
@@ -47,7 +59,7 @@ class ImageTabularDataset(Dataset):
                  feature_columns=None
                  ):
         """
-        dataframe: Pandas DataFrame mit Bildpfaden, tabellarischen Daten und Labels
+        dataframe: Pandas dataFrame with image path, table data and labels
         normalize: Operations to normalize images
         """
         self.dataframe = dataframe

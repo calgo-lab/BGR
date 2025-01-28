@@ -109,26 +109,12 @@ class TransformerDepthMarkerPredictor(nn.Module):
         x = torch.transpose(x, 0, 1)
         x = torch.sigmoid(x).squeeze(1) # (batch_size, max_seq_len)
 
-        """
-        # Mask outputs based on stop token
-        outputs, masks = [], []
-        for batch_idx in range(depth_predictions.size(1)):
-            depth_list, mask = [], []
-            for step_idx in range(depth_predictions.size(0)):
-                value = depth_predictions[step_idx, batch_idx]#.item()
-                if value.item() >= self.stop_token:
-                    break
-                depth_list.append(value)
-                mask.append(1)
+        # Round values very near to stop_token and above it to stop_token
+        x = torch.where(
+            x > self.stop_token - 0.01,
+            torch.full_like(x, self.stop_token),
+            x)
 
-            # Padding with stop token
-            pad_len = self.max_seq_len - len(depth_list)
-            depth_list.extend([self.stop_token] * pad_len) # fill in the list of predicted depths with stop tokens till max allowed size
-            mask.extend([0] * pad_len) # complete the mask list with 0's for the overflow
-            outputs.append(torch.tensor(depth_list, device=features.device))
-            masks.append(torch.tensor(mask, device=features.device))
-
-        return torch.stack(outputs), torch.stack(masks)"""
         return x
 
 
@@ -166,6 +152,7 @@ class LSTMDepthMarkerPredictor(nn.Module):
         self.hidden_dim = hidden_dim
         self.max_seq_len = max_seq_len
         self.stop_token = stop_token
+        self.num_lstm_layers = 2
 
         # First fully connected layer (projecting the concatenated vector of image and geotemp features)
         self.fc = nn.Sequential(
@@ -176,14 +163,14 @@ class LSTMDepthMarkerPredictor(nn.Module):
 
         # Decoder - will store the previous predictions in the hidden state
         self.rnn = nn.LSTM(input_size=hidden_dim, hidden_size=hidden_dim, batch_first=True,
-                           num_layers=1, dropout=0.0)
+                           num_layers=self.num_lstm_layers, dropout=0.2)
 
         # Output Layer - predicts one depth at a time
         self.predictor = nn.Linear(hidden_dim, 1)
 
     def forward(self, x):
-        hidden_state = torch.zeros(1, x.size(0), self.hidden_dim).to(x.device)
-        cell_state   = torch.zeros(1, x.size(0), self.hidden_dim).to(x.device)
+        hidden_state = torch.zeros(self.num_lstm_layers, x.size(0), self.hidden_dim).to(x.device)
+        cell_state   = torch.zeros(self.num_lstm_layers, x.size(0), self.hidden_dim).to(x.device)
         depth_markers = []
 
         x = self.fc(x).unsqueeze(1) # (batch_size, 1, hidden_dim)
@@ -192,12 +179,15 @@ class LSTMDepthMarkerPredictor(nn.Module):
             depth_marker = self.predictor(output).squeeze()
             depth_markers.append(depth_marker)
 
-        # Pad the depth_markers list with stop_token if necessary
-        #num_missing_stripes = self.max_seq_len - len(depth_markers)
-        #if num_missing_stripes > 0:
-        #    depth_markers.extend([torch.full_like(depth_marker, self.stop_token)] * num_missing_stripes)
+        depth_markers = torch.stack(depth_markers, dim=1) # (batch_size, max_seq_len)
 
-        return torch.stack(depth_markers, dim=1)
+        # Round values very near to stop_token and above it to stop_token
+        depth_markers = torch.where(
+            depth_markers > self.stop_token - 0.01,
+            torch.full_like(depth_markers, self.stop_token),
+            depth_markers)
+
+        return depth_markers
 
 
 class HorizonClassifier(nn.Module):
@@ -226,7 +216,9 @@ class HorizonClassifier(nn.Module):
         combined_features = torch.cat([image_features, geo_temp_features], dim=-1)
         depth_markers = self.depth_marker_predictor(combined_features)#, targets=targets) # use targets for teacher forcing, only if DepthPredictor accepts it in forward()
         #tabular_properties = self.tabular_property_predictor(combined_features)
-        return depth_markers#, tabular_properties
+        #horizon_embedding = ...
+
+        return depth_markers#, tabular_properties, horizon_embedding
 
 
 ### DEPRECATED ###
