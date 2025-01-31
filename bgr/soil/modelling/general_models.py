@@ -5,7 +5,7 @@ from bgr.soil.utils import concat_img_geotemp_depth
 from bgr.soil.modelling.image_encoders import ImageEncoder
 from bgr.soil.modelling.geotemp_encoders import GeoTemporalEncoder
 from bgr.soil.modelling.depth_markers import LSTMDepthMarkerPredictor
-from bgr.soil.modelling.tabular_predictors import MLPTabularPredictor
+from bgr.soil.modelling.tabular_predictors import MLPTabularPredictor, LSTMTabularPredictor
 from bgr.soil.modelling.horizon_embedders import HorizonEmbedder
 
 
@@ -31,7 +31,9 @@ class HorizonClassifier(nn.Module):
         self.depth_marker_predictor = LSTMDepthMarkerPredictor(self.image_encoder.num_img_features + geo_temp_output_dim,
                                                                rnn_hidden_dim, max_seq_len, stop_token)
 
-        # Define list of tabular predictors (each takes as input the image_geotemp_vector extended with upper and lower bound for each horizon)
+        # Define list of tabular predictors
+        # Each takes as input the image_geotemp_vector extended with upper and lower bound for each horizon (MLPTabularPredictor)
+        # or extended with the full padded depth marker list (LSTMTabularPredictor)
         self.tabular_predictors = []
         for tab_pred_name in tabular_predictors_dict:
             tab_output_dim = tabular_predictors_dict[tab_pred_name]['output_dim']
@@ -40,6 +42,12 @@ class HorizonClassifier(nn.Module):
                                                                output_dim=tab_output_dim,
                                                                classification=tab_classif,
                                                                name=tab_pred_name).to(tab_pred_device))
+            #self.tabular_predictors.append(LSTMTabularPredictor(input_dim=self.image_encoder.num_img_features + geo_temp_output_dim + max_seq_len,
+            #                                                    output_dim=tab_output_dim,
+            #                                                    max_seq_len=max_seq_len,
+            #                                                    stop_token=stop_token,
+            #                                                    classification=tab_classif,
+            #                                                    name=tab_pred_name).to(tab_pred_device))
 
     def forward(self, image, geo_temp, true_depths=None):
         # Extract image + geotemp features, then concatenate them
@@ -51,12 +59,18 @@ class HorizonClassifier(nn.Module):
         depth_markers = self.depth_marker_predictor(img_geotemp_vector)
 
         # Concatenate segmentation info. with image_geotemp_vector
-        # Note: for every horizon, only the corresponding upper and lower bound are added to the image_geotemp_vector
+        # MLPTabular: for every horizon, only the corresponding upper and lower bound are added to the image_geotemp_vector
         # During training, these boundaries are taken from true_depths, during inference from the predicted depth_markers
         if true_depths:
             tab_inputs = concat_img_geotemp_depth(img_geotemp_vector, true_depths, self.stop_token) # at training time
         else:
             tab_inputs = concat_img_geotemp_depth(img_geotemp_vector, depth_markers, self.stop_token) # at evaluation time
+        # LSTMTabular: for every horizon, the full padded depth marker list is added to the concatenated img_geotemp vector
+        # During training, these boundaries are taken from padded true_depths, during inference from the predicted depth_markers
+        #if true_depths:
+        #    tab_inputs = torch.concat([img_geotemp_vector, true_depths], dim=1) # at training time
+        #else:
+        #    tab_inputs = torch.concat([img_geotemp_vector, depth_markers], dim=1) # at evaluation time
 
         # Note: for every feature the output of the tab_predictor has a different dimension
         tabular_predictions = {}
@@ -67,7 +81,8 @@ class HorizonClassifier(nn.Module):
 
         # Shapes:
         # -depth_markers: (batch_size, max_seq_len)
-        # -every pred_[tabular]: (total_horizons_in_batch, output dim. for that feature)
+        # -every pred_[tabular], for MLPTabular:  (total_horizons_in_batch, output dim. for that feature)
+        # -every pred_[tabular], for LSTMTabular: (batch_size, max_seq_len, output dim. for that feature)
         # -horizon_embedding:
         return depth_markers, tabular_predictions #, horizon_embedding
 
