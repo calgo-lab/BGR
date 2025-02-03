@@ -6,9 +6,12 @@ class MLPTabularPredictor(nn.Module):
         super(MLPTabularPredictor, self).__init__()
         self.ann = nn.Sequential(
             nn.Linear(input_dim, 128),
+            nn.BatchNorm1d(128),
             nn.ReLU(),
             nn.Linear(128, 64),
+            nn.BatchNorm1d(64),
             nn.ReLU(),
+            nn.Dropout(0.2),
             nn.Linear(64, output_dim)
         )
         self.classification = classification
@@ -16,9 +19,9 @@ class MLPTabularPredictor(nn.Module):
 
     def forward(self, x):
         x = self.ann(x)
-        if self.classification: # only apply softmax for predicting categorical features
-            x = nn.Softmax(dim=1)(x)
-
+        # Note: leave out Softmax for classification, since nn.CrossEntropy needs the raw logits
+        #if self.classification: # only apply softmax for predicting categorical features
+        #    x = nn.Softmax(dim=1)(x)
         return x
 
 

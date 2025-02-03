@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from transformers import AutoModel, AutoFeatureExtractor
 from bgr.soil.utils import concat_img_geotemp_depth
 from bgr.soil.modelling.image_encoders import ImageEncoder
@@ -21,6 +22,7 @@ class HorizonClassifier(nn.Module):
                  ):
         super(HorizonClassifier, self).__init__()
         self.stop_token = stop_token
+        self.tab_pred_device = tab_pred_device
         self.image_encoder = ImageEncoder()
         self.geo_temp_encoder = GeoTemporalEncoder(geo_temp_input_dim, geo_temp_output_dim)
 
@@ -31,6 +33,8 @@ class HorizonClassifier(nn.Module):
         self.depth_marker_predictor = LSTMDepthMarkerPredictor(self.image_encoder.num_img_features + geo_temp_output_dim,
                                                                rnn_hidden_dim, max_seq_len, stop_token)
 
+        self.segment_encoder = ImageEncoder() # after predicting the depths, the original image is cropped and fed into another vision model
+
         # Define list of tabular predictors
         # Each takes as input the image_geotemp_vector extended with upper and lower bound for each horizon (MLPTabularPredictor)
         # or extended with the full padded depth marker list (LSTMTabularPredictor)
@@ -38,7 +42,7 @@ class HorizonClassifier(nn.Module):
         for tab_pred_name in tabular_predictors_dict:
             tab_output_dim = tabular_predictors_dict[tab_pred_name]['output_dim']
             tab_classif = tabular_predictors_dict[tab_pred_name]['classification']
-            self.tabular_predictors.append(MLPTabularPredictor(input_dim=self.image_encoder.num_img_features + geo_temp_output_dim + 2,
+            self.tabular_predictors.append(MLPTabularPredictor(input_dim=self.image_encoder.num_img_features + geo_temp_output_dim + self.segment_encoder.num_img_features,
                                                                output_dim=tab_output_dim,
                                                                classification=tab_classif,
                                                                name=tab_pred_name).to(tab_pred_device))
@@ -49,22 +53,43 @@ class HorizonClassifier(nn.Module):
             #                                                    classification=tab_classif,
             #                                                    name=tab_pred_name).to(tab_pred_device))
 
-    def forward(self, image, geo_temp, true_depths=None):
+    def forward(self, images, geo_temp, true_depths=None):
         # Extract image + geotemp features, then concatenate them
-        image_features = self.image_encoder(image)
+        image_features = self.image_encoder(images)
         geo_temp_features = self.geo_temp_encoder(geo_temp)
         img_geotemp_vector = torch.cat([image_features, geo_temp_features], dim=-1)
 
         # Predict depth markers based on concatenated vector
         depth_markers = self.depth_marker_predictor(img_geotemp_vector)
 
+        # Crop images, extract visual features, then concatenate with img_geotemp_Vec for every horizon
+        batch_size, C, H, W = images.shape
+        img_geotemp_seg_vector = []
+        for i in range(batch_size):
+            image = images[i]  # (C, H, W)
+            depths = true_depths[i] if true_depths else depth_markers[i].tolist() # true depths for training, pred. depths for inference
+            # Stop at the first occurrence of stop_token (inclusive)
+            if self.stop_token in depths:
+                depths = depths[:depths.index(self.stop_token) + 1]
+
+            # Convert normalized depth markers to pixel indices
+            pixel_depths = [int(d * H) for d in [0.0] + depths]  # Add 0.0 for upmost bound
+
+            for j in range(len(pixel_depths) - 1):
+                upper, lower = pixel_depths[j], pixel_depths[j + 1]
+                cropped = image[:, upper:lower, :]  # Crop along the height axis
+                cropped_resized = F.interpolate(cropped.unsqueeze(0), size=(H, W), mode='bilinear', align_corners=False)
+                seg_features = self.segment_encoder(cropped_resized) # apply second image encoder
+                img_geotemp_seg_vector.append( torch.cat([img_geotemp_vector[i], seg_features.squeeze(0)]) )
+        img_geotemp_seg_vector = torch.stack(img_geotemp_seg_vector)
+
         # Concatenate segmentation info. with image_geotemp_vector
         # MLPTabular: for every horizon, only the corresponding upper and lower bound are added to the image_geotemp_vector
         # During training, these boundaries are taken from true_depths, during inference from the predicted depth_markers
-        if true_depths:
-            tab_inputs = concat_img_geotemp_depth(img_geotemp_vector, true_depths, self.stop_token) # at training time
-        else:
-            tab_inputs = concat_img_geotemp_depth(img_geotemp_vector, depth_markers, self.stop_token) # at evaluation time
+        #if true_depths:
+        #    tab_inputs = concat_img_geotemp_depth(img_geotemp_vector, true_depths, self.stop_token) # at training time
+        #else:
+        #    tab_inputs = concat_img_geotemp_depth(img_geotemp_vector, depth_markers, self.stop_token) # at evaluation time
         # LSTMTabular: for every horizon, the full padded depth marker list is added to the concatenated img_geotemp vector
         # During training, these boundaries are taken from padded true_depths, during inference from the predicted depth_markers
         #if true_depths:
@@ -75,7 +100,7 @@ class HorizonClassifier(nn.Module):
         # Note: for every feature the output of the tab_predictor has a different dimension
         tabular_predictions = {}
         for tab_predictor in self.tabular_predictors:
-            tabular_predictions[tab_predictor.name] = tab_predictor(tab_inputs).squeeze()
+            tabular_predictions[tab_predictor.name] = tab_predictor(img_geotemp_seg_vector).squeeze()
 
         #horizon_embedding = ...
 
