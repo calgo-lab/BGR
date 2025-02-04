@@ -1,50 +1,6 @@
 import numpy as np
 import cv2
 
-def center_crop(img_file, x_len, y_len):
-    """Crops the image to a bounding box y_len x x_len centered around center of the image.
-
-    :param img_file:
-    :param x_len:
-    :param y_len:
-    :return:
-    """
-
-    img = cv2.imread(img_file) #Image.open(img_file)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB) # OpenCV uses BGR format
-
-    center_x, center_y = int(img.shape[0] / 2), int(img.shape[1] / 2)
-
-    left  = center_x - x_len
-    right = center_x + x_len
-    upper = center_y - y_len
-    lower = center_y + y_len
-
-    return img[upper:lower, left:right]
-
-
-# Definiere die Custom-Transformation für das Zuschneiden des Bildes
-class CenterCropTransform:
-    """
-
-    """
-    def __init__(self, crop_width=240, crop_height=450):
-        self.crop_width = crop_width
-        self.crop_height = crop_height
-
-    def __call__(self, img):
-        # Bildgröße ermitteln
-        width, height = img.size
-
-        # Berechne die Koordinaten für den zentrierten Ausschnitt
-        left = (width - self.crop_width) // 2
-        upper = (height - self.crop_height) // 2
-        right = left + self.crop_width
-        lower = upper + self.crop_height
-
-        # Zuschnitt des Bildes
-        return img.crop((left, upper, right, lower))
-
 
 def remove_ruler(image):
     """
