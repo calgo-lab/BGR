@@ -23,7 +23,7 @@ class HorizonClassifier(nn.Module):
         super(HorizonClassifier, self).__init__()
         self.stop_token = stop_token
         self.tab_pred_device = tab_pred_device
-        self.image_encoder = ImageEncoder(resnet_version='50')
+        self.image_encoder = ImageEncoder(resnet_version='18')
         self.geo_temp_encoder = GeoTemporalEncoder(geo_temp_input_dim, geo_temp_output_dim)
 
         # Choose from different depth predictors
@@ -38,7 +38,7 @@ class HorizonClassifier(nn.Module):
         # Define list of tabular predictors
         # Each takes as input the image_geotemp_vector extended with upper and lower bound for each horizon (MLPTabularPredictor)
         # or extended with the full padded depth marker list (LSTMTabularPredictor)
-        self.tabular_predictors = []
+        self.tabular_predictors = nn.ModuleList()
         for tab_pred_name in tabular_predictors_dict:
             tab_output_dim = tabular_predictors_dict[tab_pred_name]['output_dim']
             tab_classif = tabular_predictors_dict[tab_pred_name]['classification']
