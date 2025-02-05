@@ -30,7 +30,7 @@ class HorizonClassifier(nn.Module):
         #self.depth_marker_predictor = TransformerDepthMarkerPredictor(self.image_encoder.num_img_features + geo_temp_output_dim,
         #                                                              transformer_dim, num_transformer_heads, num_transformer_layers,
         #                                                              max_seq_len, stop_token)
-        self.depth_marker_predictor = LSTMDepthMarkerPredictor(self.image_encoder.num_img_features + geo_temp_output_dim,
+        self.depth_marker_predictor = LSTMDepthMarkerPredictor(self.image_encoder.num_img_features,# + geo_temp_output_dim,
                                                                rnn_hidden_dim, max_seq_len, stop_token)
 
         self.segment_encoder = ImageEncoder(resnet_version='18') # after predicting the depths, the original image is cropped and fed into another vision model
@@ -42,7 +42,8 @@ class HorizonClassifier(nn.Module):
         for tab_pred_name in tabular_predictors_dict:
             tab_output_dim = tabular_predictors_dict[tab_pred_name]['output_dim']
             tab_classif = tabular_predictors_dict[tab_pred_name]['classification']
-            self.tabular_predictors.append(MLPTabularPredictor(input_dim=self.image_encoder.num_img_features + geo_temp_output_dim + self.segment_encoder.num_img_features,
+            self.tabular_predictors.append(MLPTabularPredictor(input_dim=self.image_encoder.num_img_features + #geo_temp_output_dim + 
+                                                                         self.segment_encoder.num_img_features,
                                                                output_dim=tab_output_dim,
                                                                classification=tab_classif,
                                                                name=tab_pred_name).to(tab_pred_device))
@@ -56,8 +57,9 @@ class HorizonClassifier(nn.Module):
     def forward(self, images, geo_temp, true_depths=None):
         # Extract image + geotemp features, then concatenate them
         image_features = self.image_encoder(images)
-        geo_temp_features = self.geo_temp_encoder(geo_temp)
-        img_geotemp_vector = torch.cat([image_features, geo_temp_features], dim=-1)
+        #geo_temp_features = self.geo_temp_encoder(geo_temp)
+        #img_geotemp_vector = torch.cat([image_features, geo_temp_features], dim=-1)
+        img_geotemp_vector = image_features
 
         # Predict depth markers based on concatenated vector
         depth_markers = self.depth_marker_predictor(img_geotemp_vector)

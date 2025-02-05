@@ -5,10 +5,10 @@ class GeoTemporalEncoder(nn.Module):
     def __init__(self, input_dim, output_dim):
         super(GeoTemporalEncoder, self).__init__()
         self.encoder = nn.Sequential(
-            nn.Linear(input_dim, 64),
-            nn.BatchNorm1d(64),
+            nn.Linear(input_dim, 512),
+            nn.BatchNorm1d(512),
             nn.ReLU(),
-            nn.Linear(64, output_dim),
+            nn.Linear(512, output_dim),
             nn.BatchNorm1d(output_dim),
             nn.ReLU(),
         )
