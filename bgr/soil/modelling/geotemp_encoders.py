@@ -10,7 +10,7 @@ class GeoTemporalEncoder(nn.Module):
             nn.ReLU(),
             nn.Linear(512, output_dim),
             nn.BatchNorm1d(output_dim),
-            nn.ReLU(),
+            nn.ReLU()
         )
 
     def forward(self, x):

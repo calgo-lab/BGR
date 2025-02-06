@@ -25,6 +25,7 @@ class MLPTabularPredictor(nn.Module):
         return x
 
 
+### Work in progress ###
 class LSTMTabularPredictor(nn.Module):
     def __init__(self, input_dim, output_dim, hidden_dim=256, max_seq_len=10, stop_token=1.0,
                  classification=True, name='LSTMTabularPredictor'):
