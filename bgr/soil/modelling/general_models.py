@@ -55,11 +55,8 @@ class HorizonClassifier(nn.Module):
     def forward(self, images, geo_temp, true_depths=None):
         # Extract image + geotemp features, then concatenate them
         image_features = self.image_encoder(images)
-        #print(image_features.size())
         geo_temp_features = self.geo_temp_encoder(geo_temp)
-        #print(geo_temp_features.size())
         img_geotemp_vector = torch.cat([image_features, geo_temp_features], dim=-1)
-        #print(img_geotemp_vector.size())
 
         # Predict depth markers based on concatenated vector
         depth_markers = self.depth_marker_predictor(img_geotemp_vector)
@@ -84,7 +81,6 @@ class HorizonClassifier(nn.Module):
                 seg_features = self.segment_encoder(cropped_resized) # apply second image encoder
                 img_geotemp_seg_vector.append( torch.cat([img_geotemp_vector[i], seg_features.squeeze(0)]) )
         img_geotemp_seg_vector = torch.stack(img_geotemp_seg_vector)
-        #print(img_geotemp_seg_vector.size())
 
         # Note: for every feature the output of the tab_predictor has a different dimension
         tabular_predictions = {}
@@ -92,10 +88,9 @@ class HorizonClassifier(nn.Module):
         for tab_predictor in self.tabular_predictors:
             tab_pred = tab_predictor(img_geotemp_seg_vector)
             tabular_predictions[tab_predictor.name] = tab_pred.squeeze()
-            #print(tab_pred.size())
+
             # Concatenate img_geotemp_seg_vector with predictions for current tab. feature
             img_geotemp_seg_tab_vector = torch.cat([img_geotemp_seg_tab_vector, tab_pred], dim=-1)
-        #print(img_geotemp_seg_tab_vector.size())
 
         # Compute horizon embedding from the final concatenated vector
         horizon_embedding = self.horizon_embedder(img_geotemp_seg_tab_vector)
