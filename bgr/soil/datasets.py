@@ -93,7 +93,7 @@ class ImageTabularDataset(Dataset):
         image = transforms.Resize(self.image_size)(image)
 
         # Apply augmentation if specified
-        if augmentation:
+        if self.augment:
             image = augmentation(image)
 
         # Apply normalization if provided
