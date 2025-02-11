@@ -109,9 +109,15 @@ class ImageTabularModel(nn.Module):
     def __init__(self, vision_backbone, num_tabular_features, num_classes):
         super(ImageTabularModel, self).__init__()
 
-        # Load pretrained DINOv2-Model from Hugging Face
-        self.vision_backbone = AutoModel.from_pretrained(vision_backbone)
-        self.feature_extractor = AutoFeatureExtractor.from_pretrained(vision_backbone)
+        self.vision_backbone = vision_backbone
+        # Load pretrained DINOv2-Model from Hugging Face or ResNet
+        if vision_backbone:
+            self.image_encoder = AutoModel.from_pretrained(vision_backbone)
+            #self.feature_extractor = AutoFeatureExtractor.from_pretrained(vision_backbone)
+            num_img_features = self.vision_backbone.config.hidden_size
+        else:
+            self.image_encoder = ImageEncoder(resnet_version='18')
+            num_img_features = self.image_encoder.num_img_features
 
         # MLP for the tabular data
         self.fc_tabular = nn.Sequential(
@@ -126,7 +132,7 @@ class ImageTabularModel(nn.Module):
 
         # Combined Fully Connected Layers
         self.fc_combined = nn.Sequential(
-            nn.Linear(self.vision_backbone.config.hidden_size + 32, 128),
+            nn.Linear(num_img_features + 32, 128),
             nn.ReLU(),
             nn.BatchNorm1d(128),
             nn.Dropout(0.5),
@@ -137,7 +143,10 @@ class ImageTabularModel(nn.Module):
 
     def forward(self, image, tabular_features):
         # Extract image features
-        image_features = self.vision_backbone(pixel_values=image).last_hidden_state[:, 0, :] # Use [CLS] token representation
+        if self.vision_backbone:
+            image_features = self.vision_backbone(pixel_values=image).last_hidden_state[:, 0, :] # Use [CLS] token representation
+        else:
+            image_features = self.image_encoder(image)
 
         # Process tabular features with the MLP
         tabular_features_processed = self.fc_tabular(tabular_features)
