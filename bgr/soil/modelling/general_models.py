@@ -10,6 +10,54 @@ from bgr.soil.modelling.tabular_predictors import MLPTabularPredictor, LSTMTabul
 from bgr.soil.modelling.horizon_embedders import HorizonEmbedder
 
 
+class SegmentToTabular(nn.Module):
+    def __init__(self, tab_output_dim, classification=True, stop_token=1.0):
+        super(SegmentToTabular, self).__init__()
+        self.segment_encoder = ImageEncoder(resnet_version='18')  # after predicting the depths, the original image is cropped and fed into another vision model
+        #self.segment_encoder = AutoModel.from_pretrained('WinKawaks/vit-small-patch16-224')
+
+        self.tabular_predictor = MLPTabularPredictor(#input_dim=self.segment_encoder.config.hidden_size,
+                                                     input_dim=self.segment_encoder.num_img_features,
+                                                     output_dim=tab_output_dim, classification=classification)
+        self.stop_token = stop_token
+
+    def forward(self, cropped_images):#, depth_markers):
+
+        tab_predictions = self.tabular_predictor(cropped_images)
+
+        return tab_predictions
+
+class HorizonSegmenter(nn.Module):
+    def __init__(self,
+                 geo_temp_input_dim, geo_temp_output_dim=32, # params for geotemp encoder
+                 max_seq_len=10, stop_token=1.0,  # params for depth predictor (any class)
+                 rnn_hidden_dim=256  # params for LSTMDepthPredictor
+                 ):
+        super(HorizonSegmenter, self).__init__()
+        self.stop_token = stop_token
+        self.image_encoder = ImageEncoder(resnet_version='18')
+        self.geo_temp_encoder = GeoTemporalEncoder(geo_temp_input_dim, geo_temp_output_dim)
+
+        # Choose from different depth predictors
+        #self.depth_marker_predictor = TransformerDepthMarkerPredictor(self.image_encoder.num_img_features + geo_temp_output_dim,
+        #                                                              transformer_dim, num_transformer_heads, num_transformer_layers,
+        #                                                              max_seq_len, stop_token)
+        self.depth_marker_predictor = LSTMDepthMarkerPredictor(self.image_encoder.num_img_features + geo_temp_output_dim,
+                                                               rnn_hidden_dim, max_seq_len, stop_token)
+
+
+    def forward(self, images, geo_temp):
+        # Extract image + geotemp features, then concatenate them
+        image_features = self.image_encoder(images)
+        geo_temp_features = self.geo_temp_encoder(geo_temp)
+        img_geotemp_vector = torch.cat([image_features, geo_temp_features], dim=-1)
+
+        # Predict depth markers based on concatenated vector
+        depth_markers = self.depth_marker_predictor(img_geotemp_vector)
+
+        return depth_markers
+
+
 class HorizonClassifier(nn.Module):
     def __init__(self,
                  geo_temp_input_dim, geo_temp_output_dim=32, # params for geotemp encoder
@@ -109,42 +157,26 @@ class ImageTabularModel(nn.Module):
     def __init__(self, vision_backbone, num_tabular_features, num_classes):
         super(ImageTabularModel, self).__init__()
 
-        self.vision_backbone = vision_backbone
         # Load pretrained DINOv2-Model from Hugging Face or ResNet
         if vision_backbone:
             self.image_encoder = AutoModel.from_pretrained(vision_backbone)
             #self.feature_extractor = AutoFeatureExtractor.from_pretrained(vision_backbone)
-            num_img_features = self.vision_backbone.config.hidden_size
+            num_img_features = self.image_encoder.config.hidden_size
         else:
             self.image_encoder = ImageEncoder(resnet_version='18')
             num_img_features = self.image_encoder.num_img_features
 
         # MLP for the tabular data
-        self.fc_tabular = nn.Sequential(
-            nn.Linear(num_tabular_features, 64),
-            nn.ReLU(),
-            nn.BatchNorm1d(64),
-            nn.Dropout(0.3),
-            nn.Linear(64, 32),
-            nn.ReLU(),
-            nn.BatchNorm1d(32)
-        )
+        dim_geotemp_output = 256
+        self.fc_tabular = GeoTemporalEncoder(num_tabular_features, dim_geotemp_output)
 
         # Combined Fully Connected Layers
-        self.fc_combined = nn.Sequential(
-            nn.Linear(num_img_features + 32, 128),
-            nn.ReLU(),
-            nn.BatchNorm1d(128),
-            nn.Dropout(0.5),
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Linear(64, num_classes)
-        )
+        self.fc_combined = HorizonEmbedder(input_dim=num_img_features + dim_geotemp_output, output_dim=num_classes)
 
     def forward(self, image, tabular_features):
         # Extract image features
         if self.vision_backbone:
-            image_features = self.vision_backbone(pixel_values=image).last_hidden_state[:, 0, :] # Use [CLS] token representation
+            image_features = self.image_encoder(pixel_values=image).last_hidden_state[:, 0, :] # Use [CLS] token representation
         else:
             image_features = self.image_encoder(image)
 
