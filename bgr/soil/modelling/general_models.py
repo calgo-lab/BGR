@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModel, AutoFeatureExtractor
 from bgr.soil.utils import concat_img_geotemp_depth
-from bgr.soil.modelling.image_encoders import ImageEncoder
+from bgr.soil.modelling.image_encoders import ResNetEncoder, HDCNNEncoder
 from bgr.soil.modelling.geotemp_encoders import GeoTemporalEncoder
 from bgr.soil.modelling.depth_markers import LSTMDepthMarkerPredictor
 from bgr.soil.modelling.tabular_predictors import MLPTabularPredictor, LSTMTabularPredictor
@@ -13,7 +13,8 @@ from bgr.soil.modelling.horizon_embedders import HorizonEmbedder
 class SegmentToTabular(nn.Module):
     def __init__(self, tab_output_dim, classification=True, stop_token=1.0):
         super(SegmentToTabular, self).__init__()
-        self.segment_encoder = ImageEncoder(resnet_version='18')
+        #self.segment_encoder = ResNetEncoder(resnet_version='18')
+        self.segment_encoder = HDCNNEncoder()
 
         self.tabular_predictor = MLPTabularPredictor(input_dim=self.segment_encoder.num_img_features,
                                                      output_dim=tab_output_dim, classification=classification)
@@ -22,7 +23,7 @@ class SegmentToTabular(nn.Module):
     def forward(self, cropped_images):
 
         seg_features = self.segment_encoder(cropped_images)
-        tab_predictions = self.tabular_predictor(seg_features)
+        tab_predictions = self.tabular_predictor(seg_features).squeeze()
 
         return tab_predictions
 
@@ -34,7 +35,7 @@ class HorizonSegmenter(nn.Module):
                  ):
         super(HorizonSegmenter, self).__init__()
         self.stop_token = stop_token
-        self.image_encoder = ImageEncoder(resnet_version='18')
+        self.image_encoder = ResNetEncoder(resnet_version='18')
         self.geo_temp_encoder = GeoTemporalEncoder(geo_temp_input_dim, geo_temp_output_dim)
 
         # Choose from different depth predictors
@@ -70,7 +71,7 @@ class HorizonClassifier(nn.Module):
         super(HorizonClassifier, self).__init__()
         self.stop_token = stop_token
         self.device = device
-        self.image_encoder = ImageEncoder(resnet_version='18')
+        self.image_encoder = ResNetEncoder(resnet_version='18')
         self.geo_temp_encoder = GeoTemporalEncoder(geo_temp_input_dim, geo_temp_output_dim)
 
         # Choose from different depth predictors
@@ -80,7 +81,7 @@ class HorizonClassifier(nn.Module):
         self.depth_marker_predictor = LSTMDepthMarkerPredictor(self.image_encoder.num_img_features + geo_temp_output_dim,
                                                                rnn_hidden_dim, max_seq_len, stop_token)
 
-        self.segment_encoder = ImageEncoder(resnet_version='18') # after predicting the depths, the original image is cropped and fed into another vision model
+        self.segment_encoder = ResNetEncoder(resnet_version='18') # after predicting the depths, the original image is cropped and fed into another vision model
 
         # Define list of tabular predictors
         # Each takes as input the image_geotemp_vector extended the feature vector from the horizon segments
@@ -162,7 +163,7 @@ class ImageTabularModel(nn.Module):
             #self.feature_extractor = AutoFeatureExtractor.from_pretrained(vision_backbone)
             num_img_features = self.image_encoder.config.hidden_size
         else:
-            self.image_encoder = ImageEncoder(resnet_version='18')
+            self.image_encoder = ResNetEncoder(resnet_version='18')
             num_img_features = self.image_encoder.num_img_features
 
         # MLP for the tabular data

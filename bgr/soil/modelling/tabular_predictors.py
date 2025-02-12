@@ -5,14 +5,14 @@ class MLPTabularPredictor(nn.Module):
     def __init__(self, input_dim, output_dim, classification=True, name='MLPTabularPredictor'):
         super(MLPTabularPredictor, self).__init__()
         self.ann = nn.Sequential(
-            nn.Linear(input_dim, 512),
-            nn.BatchNorm1d(512),
-            nn.ReLU(),
-            nn.Linear(512, 128),
-            nn.BatchNorm1d(128),
-            nn.ReLU(),
+            #nn.Linear(input_dim, 512),
+            #nn.BatchNorm1d(512),
+            #nn.ReLU(),
+            #nn.Linear(512, 128),
+            #nn.BatchNorm1d(128),
+            #nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(128, output_dim)
+            nn.Linear(input_dim, output_dim)
         )
         self.classification = classification
         self.name = name
