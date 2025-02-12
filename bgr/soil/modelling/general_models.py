@@ -13,17 +13,16 @@ from bgr.soil.modelling.horizon_embedders import HorizonEmbedder
 class SegmentToTabular(nn.Module):
     def __init__(self, tab_output_dim, classification=True, stop_token=1.0):
         super(SegmentToTabular, self).__init__()
-        self.segment_encoder = ImageEncoder(resnet_version='18')  # after predicting the depths, the original image is cropped and fed into another vision model
-        #self.segment_encoder = AutoModel.from_pretrained('WinKawaks/vit-small-patch16-224')
+        self.segment_encoder = ImageEncoder(resnet_version='18')
 
-        self.tabular_predictor = MLPTabularPredictor(#input_dim=self.segment_encoder.config.hidden_size,
-                                                     input_dim=self.segment_encoder.num_img_features,
+        self.tabular_predictor = MLPTabularPredictor(input_dim=self.segment_encoder.num_img_features,
                                                      output_dim=tab_output_dim, classification=classification)
         self.stop_token = stop_token
 
-    def forward(self, cropped_images):#, depth_markers):
+    def forward(self, cropped_images):
 
-        tab_predictions = self.tabular_predictor(cropped_images)
+        seg_features = self.segment_encoder(cropped_images)
+        tab_predictions = self.tabular_predictor(seg_features)
 
         return tab_predictions
 
