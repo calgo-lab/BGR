@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: bgr-project
-        image: vipin2310/ds-python:3.10.10.v2
+        image: vipin2310/bgr-python:3.9.21
         securityContext:
           runAsUser: 0
         ports:
