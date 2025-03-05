@@ -10,3 +10,8 @@ torchvision==0.11.3
 tqdm==4.62.3
 transformers==4.25.1
 ydata_profiling==4.10.0
+opencv-python==4.8.1.78
+jellyfish==1.1.3
+jupyter==1.0.0
+ipywidgets==7.6.5
+iterative-stratification==0.1.9
