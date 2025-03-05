@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bgr-project
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bgr-project
+  template:
+    metadata:
+      labels:
+        app: bgr-project
+    spec:
+      containers:
+      - name: bgr-project
+        image: vipin2310/ds-python:3.10.10.v2
+        securityContext:
+          runAsUser: 0
+        ports:
+          - containerPort: 22
+        resources:
+          requests:
+            cpu: "10"
+            # memory: 50Gi
+            # nvidia.com/gpu: 1
+          limits:
+            # memory: 200Gi
+            # nvidia.com/gpu: 1
+        volumeMounts:
+          - name: bgr-project-pvc
+            mountPath: /storage
+          - name: ssh-key
+            mountPath: /root/.ssh
+      # nodeSelector:
+        # gpu: a100
+      volumes:
+        - name: bgr-project-pvc
+          persistentVolumeClaim:
+            claimName: bgr-project-pvc
+        - name: ssh-key
+          secret:
+            secretName: my-ssh-public-key
