@@ -47,3 +47,9 @@ Host [ProjectName]
 ```
 ssh [ProjectName]
 ```
+
+# Additional Information:
+
+### To clear the pod
+```
+kubectl scale deployment bgr-project --replicas=0
