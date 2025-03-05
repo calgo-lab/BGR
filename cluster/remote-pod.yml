@@ -22,18 +22,21 @@ spec:
         resources:
           requests:
             cpu: "10"
-            # memory: 50Gi
-            # nvidia.com/gpu: 1
+            memory: 50Gi
+            nvidia.com/gpu: 1
           limits:
-            # memory: 200Gi
-            # nvidia.com/gpu: 1
+            memory: 200Gi
+            nvidia.com/gpu: 1
         volumeMounts:
           - name: bgr-project-pvc
             mountPath: /storage
           - name: ssh-key
             mountPath: /root/.ssh
-      # nodeSelector:
-        # gpu: a100
+          - name: dshm
+            mountPath: /dev/shm
+      nodeSelector:
+        kubernetes.io/hostname: cl-worker24
+        gpu: a100
       volumes:
         - name: bgr-project-pvc
           persistentVolumeClaim:
@@ -41,3 +44,7 @@ spec:
         - name: ssh-key
           secret:
             secretName: my-ssh-public-key
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
