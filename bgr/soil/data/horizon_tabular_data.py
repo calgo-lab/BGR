@@ -48,7 +48,6 @@ class HorizonDataProcessor:
             'Moormaechtigkeit', 'Torfmaechtigkeit', 'Neigung', 'Exposition', 'Woelbung', 
             'Reliefformtyp', 'LageImRelief', 'KV_0_30', 'KV_30_100'
         ]
-        # Define soil infos and geotemporal image infos for later use and external access
         self.soil_infos = ['Bodenart', 'Bodenfarbe', 'Steine', 'Karbonat', 'Humusgehaltsklasse', 'Durchwurzelung']
         self.geotemp_img_infos = [
             'Probenahme_Monat', 'Probenahme_Jahr', 'xcoord', 'ycoord', 'Bodenklimaraum_Name',
@@ -56,6 +55,8 @@ class HorizonDataProcessor:
             'Moormaechtigkeit', 'Torfmaechtigkeit', 'Neigung', 'Exposition', 'Woelbung', 
             'Reliefformtyp', 'LageImRelief', 'KV_0_30', 'KV_30_100', 'file'
         ]
+        # For now, leave out Bodenart and Bodenfarbe. Also, we don't need to stratify wrt stones (it's numerical)
+        self.stratified_split_targets = ['Karbonat', 'Humusgehaltsklasse', 'Durchwurzelung', 'Horizontsymbol_relevant']
         
     @staticmethod
     def _validate_paths(label_embeddings_path: str, data_folder_path: str) -> None:
@@ -109,10 +110,11 @@ class HorizonDataProcessor:
         df = self._impute_and_clean_data(df)
         df = self._process_target_column(df)
         df = self._encode_and_scale_features(df)
+        df = self._onehot_encode_categorical_features(df)
         df = self._aggregate_data_for_sequential_training(df)
         return df
     
-    def multi_label_stratified_shuffle_split_data(self, df: pd.DataFrame, n_splits : int = 1, test_size: float = 0.2, random_state: int = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def multi_label_stratified_shuffle_split(self, df: pd.DataFrame, n_splits : int = 1, test_size: float = 0.2, random_state: int = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Splits the dataset according to the distribution of classes in categorical tabular features.
         
@@ -131,10 +133,9 @@ class HorizonDataProcessor:
             test_size=test_size,
             random_state=random_state
         )
-        # For now, leave out Bodenart and Bodenfarbe. Also, we don't need to stratify wrt stones (it's numerical)
-        df_tabular_targets = df[self.soil_infos[3:] + [self.target]]
+        df_stratified_split_targets = df[self.stratified_split_targets]
 
-        for train_idx, val_idx in ml_split.split(df, df_tabular_targets):
+        for train_idx, val_idx in ml_split.split(df, df_stratified_split_targets):
             train_df, val_df = df.iloc[train_idx], df.iloc[val_idx]
             
         return train_df, val_df
@@ -285,6 +286,21 @@ class HorizonDataProcessor:
         df = df.astype({'Bodenart': int, 'Bodenfarbe': int, 'Humusgehaltsklasse': int})
         scaler = MinMaxScaler()
         df[self.num_features] = scaler.fit_transform(df[self.num_features])
+        return df
+    
+    def _onehot_encode_categorical_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        One-hot encodes categorical features.
+        
+        Args:
+            df (pd.DataFrame): DataFrame containing the horizon data.
+        
+        Returns:
+            pd.DataFrame: DataFrame with one-hot encoded categorical features.
+        """
+        geotemp_categ = list(set(self.categ_features).intersection(set(self.geotemp_img_infos)))
+        df = pd.get_dummies(df, columns=geotemp_categ)
+        self.geotemp_img_infos = [c for gt in self.geotemp_img_infos for c in df.columns if c.startswith(gt)]
         return df
 
     def _aggregate_data_for_sequential_training(self, df: pd.DataFrame) -> pd.DataFrame:
