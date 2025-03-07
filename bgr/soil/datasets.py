@@ -51,7 +51,7 @@ def normalize_df_list(lst, max_boundary=100.0):
 class ImageTabularDataset(Dataset):
     def __init__(self,
                  dataframe,
-                 image_size=(224, 224),  # Default size for ViT
+                 image_size=(3200//2, 1500//2),#(224, 224),  # Default size for ViT
                  normalize=None,
                  augment=[],
                  image_path=None,
