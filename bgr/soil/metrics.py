@@ -143,6 +143,10 @@ def depth_iou(preds: torch.Tensor, targets: torch.Tensor, stop_token=1.0):
         pred_pairs = torch.stack((pred_depths[:-1], pred_depths[1:]), dim=1)
         true_pairs = torch.stack((true_depths[:-1], true_depths[1:]), dim=1)
 
+        # Compute disjoint mask - check if the intervals do not overlap
+        # Two segments [a, b] and [c, d] don't overlap if b <= c or d <= a (for a <= b and c <= d)
+        disjoint_mask = (pred_pairs[:, 1] <= true_pairs[:, 0]) | (true_pairs[:, 1] <= pred_pairs[:, 0])
+
         # Concatenate and sort
         all_pairs = torch.cat((pred_pairs, true_pairs), dim=1)  # Shape: (num_segments, 4)
         sorted_depths, _ = torch.sort(all_pairs, dim=1)  # Sort along dim=1
@@ -150,6 +154,9 @@ def depth_iou(preds: torch.Tensor, targets: torch.Tensor, stop_token=1.0):
         # Compute intersection and union
         intersections = sorted_depths[:, 2] - sorted_depths[:, 1]  # Middle two
         unions = sorted_depths[:, 3] - sorted_depths[:, 0]  # Outermost
+
+        # Set intersection to 0 where intervals are disjoint
+        intersections[disjoint_mask] = 0.0
 
         # Compute IoU, handling zero division safely
         ious = torch.where(unions > 0, intersections / unions, torch.zeros_like(unions))

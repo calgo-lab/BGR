@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModel, AutoFeatureExtractor
 from bgr.soil.utils import concat_img_geotemp_depth
-from bgr.soil.modelling.image_encoders import ResNetEncoder, HDCNNEncoder
+from bgr.soil.modelling.image_encoders import ResNetEncoder, HDCNNEncoder, PatchCNNEncoder
 from bgr.soil.modelling.geotemp_encoders import GeoTemporalEncoder
 from bgr.soil.modelling.depth_markers import LSTMDepthMarkerPredictor
 from bgr.soil.modelling.tabular_predictors import MLPTabularPredictor, LSTMTabularPredictor
@@ -35,7 +35,8 @@ class HorizonSegmenter(nn.Module):
                  ):
         super(HorizonSegmenter, self).__init__()
         self.stop_token = stop_token
-        self.image_encoder = ResNetEncoder(resnet_version='18')
+        #self.image_encoder = ResNetEncoder(resnet_version='18')
+        self.image_encoder = PatchCNNEncoder(patch_size=512, patch_stride=512)
         self.geo_temp_encoder = GeoTemporalEncoder(geo_temp_input_dim, geo_temp_output_dim)
 
         # Choose from different depth predictors
