@@ -100,3 +100,61 @@ class DepthMarkerLoss(nn.Module):
         total_loss = mse_loss + self.lambda_mono * mono_term + self.lambda_div * div_term
 
         return total_loss
+
+
+def depth_iou(preds: torch.Tensor, targets: torch.Tensor, stop_token=1.0):
+    """
+    Computes a 1D IoU metric for depth markers based on segment overlap.
+
+    Args:
+        preds (torch.Tensor): Predicted depth markers (batch_size, max_seq_len)
+        targets (torch.Tensor): Ground truth depth markers (batch_size, max_seq_len)
+        stop_token (float): Value indicating the stop token (default: 1.0)
+
+    Returns:
+        float: Average IoU score over the batch
+    """
+    batch_size = preds.shape[0]
+    iou_scores = torch.zeros(batch_size, device=preds.device)  # Store per-sample IoUs
+
+    for i in range(batch_size):
+        true_depths = targets[i]
+        pred_depths = preds[i]
+
+        # Find stop token index and clip sequences
+        stop_idx = (true_depths == stop_token).nonzero(as_tuple=True)[0]
+        if len(stop_idx) == 0:
+            continue  # No valid depths
+
+        stop_idx = stop_idx[0].item()
+        true_depths = true_depths[: stop_idx + 1]
+        num_true_segments = len(true_depths)
+        pred_depths = pred_depths[:num_true_segments]
+
+        # Add ground level (0.0) as the first depth
+        true_depths = torch.cat((torch.tensor([0.0], device=targets.device), true_depths))
+        pred_depths = torch.cat((torch.tensor([0.0], device=preds.device), pred_depths))
+
+        # Ensure we have at least one valid segment
+        if num_true_segments < 1:
+            continue
+
+        # Stack depth pairs for efficient processing
+        pred_pairs = torch.stack((pred_depths[:-1], pred_depths[1:]), dim=1)
+        true_pairs = torch.stack((true_depths[:-1], true_depths[1:]), dim=1)
+
+        # Concatenate and sort
+        all_pairs = torch.cat((pred_pairs, true_pairs), dim=1)  # Shape: (num_segments, 4)
+        sorted_depths, _ = torch.sort(all_pairs, dim=1)  # Sort along dim=1
+
+        # Compute intersection and union
+        intersections = sorted_depths[:, 2] - sorted_depths[:, 1]  # Middle two
+        unions = sorted_depths[:, 3] - sorted_depths[:, 0]  # Outermost
+
+        # Compute IoU, handling zero division safely
+        ious = torch.where(unions > 0, intersections / unions, torch.zeros_like(unions))
+
+        # Store the mean IoU for this sample
+        iou_scores[i] = ious.mean()
+
+    return iou_scores.mean().item()  # Average over the batch
