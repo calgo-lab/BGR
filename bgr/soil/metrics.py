@@ -164,4 +164,22 @@ def depth_iou(preds: torch.Tensor, targets: torch.Tensor, stop_token=1.0):
         # Store the mean IoU for this sample
         iou_scores[i] = ious.mean()
 
-    return iou_scores.mean().item()  # Average over the batch
+    #return iou_scores.mean().item()  # Average over the batch
+    return iou_scores.mean() # Average over the batch and keep tensor attached to computation graph (requires_grad=True)
+
+
+class DepthIoULoss(nn.Module):
+    """1D Depth IoU Loss"""
+
+    def __init__(self, stop_token=1.0):
+        super(DepthIoULoss, self).__init__()
+        self.stop_token = stop_token
+
+    def forward(self, predictions, targets):
+        """
+
+        :param predictions:
+        :param targets:
+        :return:
+        """
+        return torch.tensor(1.0, device=predictions.device) - depth_iou(predictions, targets, self.stop_token)
