@@ -3,50 +3,6 @@ from torchvision import transforms
 from torch.utils.data import Dataset
 from PIL import Image
 
-
-def simplify_string(complex_string, mapping_df, col_name):
-    """Simplifies a complex string based on the mapping
-
-    :param complex_string:
-    :param mapping_df:
-    :return:
-    """
-    complex_symb = complex_string.split('; ')[1]
-    # Find the matching simplified part in the mapping DataFrame
-    simple_symb_series = mapping_df[col_name][mapping_df['Horiz'] == complex_symb]
-
-    # Keep the complex symbol, when there is no simplified alternative
-    if not simple_symb_series.empty:
-        simple_symb = simple_symb_series.values[0]
-    else:
-        simple_symb = complex_symb
-
-    return simple_symb
-
-
-def encode_categorical_columns(df, col_name):
-    """
-
-    :param df:
-    :param col_name:
-    :return:
-    """
-    counts = df[col_name].value_counts()
-    df[col_name] = df[col_name].replace(counts.index, range(len(counts)))
-
-
-def normalize_df_list(lst, max_boundary=100.0):
-    """
-    Rounds the last list item to a max. threshold and normalizes the whole list.
-    :param lst:
-    :param max_boundary:
-    :return:
-    """
-    lst[-1] = max_boundary
-    lst = [x/max_boundary for x in lst]
-    return lst
-
-
 # Custom Dataset class for images, tabular data and labels
 class ImageTabularDataset(Dataset):
     def __init__(self,
