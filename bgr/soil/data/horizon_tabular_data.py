@@ -114,7 +114,7 @@ class HorizonDataProcessor:
         df = self._aggregate_data_for_sequential_training(df)
         return df
     
-    def multi_label_stratified_shuffle_split(self, df: pd.DataFrame, n_splits : int = 1, test_size: float = 0.2, random_state: int = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def multi_label_stratified_shuffle_split(self, df: pd.DataFrame, n_splits : int = 1, train_val_test_frac: list[float] = [0.7, 0.15, 0.15], random_state: int = None) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
         Splits the dataset according to the distribution of classes in categorical tabular features.
         
@@ -125,20 +125,31 @@ class HorizonDataProcessor:
             random_state (int): Random seed. Default is None.
         
         Returns:
-            Tuple[pd.DataFrame, pd.DataFrame]: Training and validation DataFrames.
+            Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: Training, validation  and test dataframes.
         """
+        
         # Split dataset according to distribution of classes in categorical tabular features (including horizon labels)
-        ml_split = MultilabelStratifiedShuffleSplit(
+        df_stratified_split_targets = df[self.stratified_split_targets]
+        
+        # First split training apart from validation and test
+        ml_split_1 = MultilabelStratifiedShuffleSplit(
             n_splits=n_splits,
-            test_size=test_size,
+            test_size=train_val_test_frac[2] + train_val_test_frac[3],
             random_state=random_state
         )
-        df_stratified_split_targets = df[self.stratified_split_targets]
-
-        for train_idx, val_idx in ml_split.split(df, df_stratified_split_targets):
-            train_df, val_df = df.iloc[train_idx], df.iloc[val_idx]
-            
-        return train_df, val_df
+        for train_idx, val_and_test_idx in ml_split_1.split(df, df_stratified_split_targets):
+            train_df, val_and_test_df = df.iloc[train_idx], df.iloc[val_and_test_idx]
+        
+        # Second split validation and test
+        ml_split_2 = MultilabelStratifiedShuffleSplit(
+            n_splits=n_splits,
+            test_size=train_val_test_frac[3] / (train_val_test_frac[2] + train_val_test_frac[3]),
+            random_state=random_state
+        )
+        for val_idx, test_idx in ml_split_2.split(val_and_test_df, df_stratified_split_targets):
+            val_df, test_df = val_and_test_df.iloc[val_idx], val_and_test_df.iloc[test_idx]
+        
+        return train_df, val_df, test_df
 
     def _load_and_preprocess_main_csv(self) -> pd.DataFrame:
         """
