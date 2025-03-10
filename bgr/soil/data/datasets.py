@@ -7,7 +7,7 @@ from PIL import Image
 class ImageTabularDataset(Dataset):
     def __init__(self,
                  dataframe,
-                 image_size=(3200//2, 1500//2),#(224, 224),  # Default size for ViT
+                 image_size=(1024, 512),#(224, 224),  # Default size for ViT
                  normalize=None,
                  augment=[],
                  image_path=None,
