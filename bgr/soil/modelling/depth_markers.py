@@ -19,14 +19,14 @@ class LSTMDepthMarkerPredictor(nn.Module):
 
         # Decoder - will store the previous predictions in the hidden state
         self.rnn = nn.LSTM(input_size=hidden_dim, hidden_size=hidden_dim, batch_first=True,
-                           num_layers=self.num_lstm_layers, dropout=0.2)
+                           num_layers=self.num_lstm_layers, dropout=0.2, bidirectional=True)
 
         # Output Layer - predicts one depth at a time
-        self.predictor = nn.Linear(hidden_dim, 1)
+        self.predictor = nn.Linear(2*hidden_dim, 1)
 
     def forward(self, x):
-        hidden_state = torch.zeros(self.num_lstm_layers, x.size(0), self.hidden_dim).to(x.device)
-        cell_state   = torch.zeros(self.num_lstm_layers, x.size(0), self.hidden_dim).to(x.device)
+        hidden_state = torch.zeros(2*self.num_lstm_layers, x.size(0), self.hidden_dim).to(x.device)
+        cell_state   = torch.zeros(2*self.num_lstm_layers, x.size(0), self.hidden_dim).to(x.device)
         depth_markers = []
 
         x = self.fc(x).unsqueeze(1) # (batch_size, 1, hidden_dim)
