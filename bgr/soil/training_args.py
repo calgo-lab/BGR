@@ -52,6 +52,8 @@ class TrainingArgs:
         return training_args
     
     def init_default_callbacks(self, model_output_dir : str) -> None:
+        # TODO: Maybe add these as parameters to the main.py
+        # TODO: Maybe Pytorch Lightning callbacks?
         self.callbacks = [
             EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=5, verbose=True)
         ]
