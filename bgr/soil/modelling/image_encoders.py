@@ -22,35 +22,38 @@ class HDCNNEncoder(nn.Module):
 
         self.num_img_features = output_dim
         self.conv_layers = nn.Sequential(
-            nn.Conv2d(input_channels, 32, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(input_channels, output_dim // 16, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(output_dim // 16),
             nn.ReLU(),
+            nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2)),
 
-            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(output_dim // 16, output_dim // 8, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(output_dim // 8),
             nn.ReLU(),
+            nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2)),
 
-            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(128),
+            nn.Conv2d(output_dim // 8, output_dim // 4, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(output_dim // 4),
             nn.ReLU(),
+            nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2)),
 
-            nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(256),
+            nn.Conv2d(output_dim // 4, output_dim // 2, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(output_dim // 2),
             nn.ReLU(),
+            nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2)),
 
-            nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(512),
-            nn.ReLU()
+            nn.Conv2d(output_dim // 2, output_dim, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(output_dim),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
         )
 
         self.global_pool = nn.AdaptiveAvgPool2d(1)
-        self.fc = nn.Linear(512, output_dim)
 
     def forward(self, x):
         x = self.conv_layers(x)
         x = self.global_pool(x)
         x = torch.flatten(x, 1)  # Flatten to (batch_size, 512)
-        x = self.fc(x)
         return x
 
 
@@ -62,29 +65,33 @@ class PatchCNNEncoder(nn.Module):
         self.num_img_features = output_dim
 
         self.conv_layers = nn.Sequential(
-            nn.Conv2d(input_channels, 32, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(input_channels, output_dim//16, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(output_dim//16),
             nn.ReLU(),
+            nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2)),
 
-            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(output_dim//16, output_dim//8, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(output_dim//8),
             nn.ReLU(),
+            nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2)),
 
-            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(128),
+            nn.Conv2d(output_dim//8, output_dim//4, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(output_dim//4),
             nn.ReLU(),
+            nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2)),
 
-            nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(256),
+            nn.Conv2d(output_dim//4, output_dim//2, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(output_dim//2),
             nn.ReLU(),
+            nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2)),
 
-            nn.Conv2d(256, 512, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(512),
-            nn.ReLU()
+            nn.Conv2d(output_dim//2, output_dim, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(output_dim),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
         )
 
         self.global_pool = nn.AdaptiveAvgPool2d(1)  # Reduce to (batch_size, 512, 1, 1)
-        self.fc = nn.Linear(512, output_dim)  # Map to final feature vector
 
     def forward(self, x):
         batch_size, channels, height, width = x.shape
@@ -94,7 +101,6 @@ class PatchCNNEncoder(nn.Module):
         patch_features = self.conv_layers(patches)
         patch_features = self.global_pool(patch_features)
         patch_features = torch.flatten(patch_features, 1)
-        patch_features = self.fc(patch_features)
 
         # Combine all patch features into a single image feature vector
         image_feature = torch.mean(patch_features.view(batch_size, -1, patch_features.size(-1)), dim=1)
