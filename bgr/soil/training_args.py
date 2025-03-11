@@ -1,7 +1,5 @@
 from argparse import Namespace
 import torch
-import torch.nn as nn
-from torchmetrics import MeanSquaredError
 from bgr.soil.callbacks import EarlyStopping, ModelCheckpoint
 
 class TrainingArgs:
@@ -12,14 +10,9 @@ class TrainingArgs:
         learning_rate: int = 1e-3,
         dropout: float = 0.1,
         batch_size: int = 64,
-        num_workers: int = 4,
+        num_workers: int = 16,
         num_epochs: int = 100,
         device: str = 'cuda' if torch.cuda.is_available() else 'cpu',
-        optimizer_cls = torch.optim.Adam,
-        lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
-        torch_metric = MeanSquaredError(),
-        loss_fn = nn.MSELoss(),
-        wandb_logger = None,
         callbacks = None,
         save_checkpoints = True,
         use_early_stopping = True,
@@ -33,11 +26,6 @@ class TrainingArgs:
         self.num_workers = num_workers
         self.num_epochs = num_epochs
         self.device = device
-        self.optimizer_cls = optimizer_cls
-        self.lr_scheduler_cls = lr_scheduler_cls
-        self.torch_metric = torch_metric
-        self.loss_fn = loss_fn
-        self.wandb_logger = wandb_logger
         self.callbacks = callbacks
         self.save_checkpoints = save_checkpoints
         self.use_early_stopping = use_early_stopping
