@@ -12,7 +12,6 @@ def get_experiment(experiment_type: str, target: str) -> Experiment:
     """
     
     if experiment_type == "TODO":
-        print("Experiment type not implemented yet.")
-        pass
+        raise NotImplementedError("Experiments not yet implemented.")
     else:
         raise ValueError(f"Unknown experiment type: {experiment_type}")

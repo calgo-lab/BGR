@@ -2,6 +2,7 @@ import argparse
 from pathlib import Path
 from ast import literal_eval
 import sys
+import datetime
 
 import torch
 
@@ -58,11 +59,10 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--dropout', type=float, default=0.1)
     parser.add_argument('--batch_size', type=int, default=64)
-    parser.add_argument('--num_workers', type=int, default=4)
+    parser.add_argument('--num_workers', type=int, default=16)
     parser.add_argument('--num_epochs', type=int, default=100)
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu')
     parser.add_argument('--seed', type=int, default=2025)
-    parser.add_argument('--num_experiment_runs', type=int, default=1)
     parser.add_argument('--no_save_checkpoints', dest='save_checkpoints', action='store_false') # save_checkpoints defaults to true if not specified
     parser.add_argument('--no_early_stopping', dest='use_early_stopping', action='store_false') # use_early_stopping defaults to true if not specified
     parser.add_argument('--early_stopping_patience', type=int, default=5)
@@ -114,17 +114,16 @@ def main(args : argparse.Namespace):
     """
     
     # Create model output path
-    model_output_dir = f"{args.model_output_dir}/{args.experiment_type}"
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    model_output_dir = f"{args.model_output_dir}/{args.experiment_type}_{timestamp}"
     Path(model_output_dir).mkdir(parents=True, exist_ok=True)
 
     # Load data
     dataprocessor = HorizonDataProcessor(args.label_embedding_path, args.data_folder_path)
     horizon_data = dataprocessor.load_processed_data()
     
-    # TODO: Should we have n_splits other than 1? (Thats not train/val/test!)
-    # TODO: Test 3 splits with this function, confirm if it works
     # Split data
-    train_data, val_data, test_data = dataprocessor.multi_label_stratified_shuffle_split(horizon_data, split_date=args.test_split_date)
+    train_data, val_data, test_data = dataprocessor.multi_label_stratified_shuffle_split(horizon_data, split_date=args.test_split_date, random_state=args.seed)
     print(f"Train data shape: {train_data.shape}")
     print(f"Validation data shape: {val_data.shape}")
     print(f"Test data shape: {test_data.shape}")
@@ -139,14 +138,13 @@ def main(args : argparse.Namespace):
         val_data, 
         test_data,
         target = args.target,
-        num_experiment_runs = args.num_experiment_runs,
         seed = args.seed,
         wandb_project_name = args.wandb_project_name,
         wandb_image_logging = args.wandb_image_logging
     )
     
     # Train, validate and test the model according to the model arguments
-    metrics = experimenter.run_train_val_test(training_args, model_output_dir, wandb_offline=args.wandb_offline)
+    metrics = experimenter.run_train_val_test(training_args, model_output_dir, timestamp, wandb_offline=args.wandb_offline)
 
 def read_and_handle_args():
     """

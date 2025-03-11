@@ -23,7 +23,6 @@ class ExperimentRunner:
             test_data: pd.DataFrame,
             target: str,
             wandb_project_name : str,
-            num_experiment_runs: int = 1,
             seed: int = None,
             wandb_image_logging: bool = False
         ):
@@ -37,22 +36,22 @@ class ExperimentRunner:
         self.test_data = test_data
         self.target = target
         self.wandb_project_name = wandb_project_name
-        self.num_experiment_runs = num_experiment_runs
         self.seed = seed
         self.wandb_image_logging = wandb_image_logging
         
     def run_train_val_test(
-        self,
-        training_args: TrainingArgs,
-        model_output_dir: str,
-        wandb_offline: bool = False
-    ):
+            self,
+            training_args: TrainingArgs,
+            model_output_dir: str,
+            datetime: str,
+            wandb_offline: bool = False
+        ):
         try:
             # Get the experiment according to the specified type
             experiment = get_experiment(self.experiment_type, self.target)
             
             # Initialize wandb
-            self._init_wandb(wandb_offline)
+            self._init_wandb(wandb_offline, model_output_dir, datetime)
             
             # Set the seed
             if self.seed is not None:
@@ -80,7 +79,7 @@ class ExperimentRunner:
                 wandb.run.finish()
             torch.cuda.empty_cache()
     
-    def _init_wandb(self, wandb_offline: bool) -> None:
+    def _init_wandb(self, wandb_offline: bool, model_output_dir: str, timestamp: str) -> None:
         """
         Initializes the wandb for the experiment.
         
@@ -88,12 +87,10 @@ class ExperimentRunner:
             wandb_offline (bool): If True, wandb will be initialized in offline mode.
         """
         
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        wandb.init(project=self.wandb_project_name, name=f"{self.experiment_type}_{timestamp}", mode = 'offline' if wandb_offline else 'online')
+        wandb.init(project=self.wandb_project_name, dir=model_output_dir, name=f"{self.experiment_type}_{timestamp}", mode = 'offline' if wandb_offline else 'online')
             
         wandb.config.update({
             "experiment_type": self.experiment_type,
-            "num_experiment_runs": self.num_experiment_runs,
             "seed": self.seed
         })
     

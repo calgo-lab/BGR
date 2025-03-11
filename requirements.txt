@@ -15,5 +15,4 @@ jellyfish==1.1.3
 jupyter==1.0.0
 ipywidgets==7.6.5
 iterative-stratification==0.1.9
-torchmetrics==1.2.1
 wandb==0.19.8
