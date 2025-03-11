@@ -48,6 +48,7 @@ def create_parser() -> argparse.ArgumentParser:
 
     # dir-related parameters
     parser.add_argument('--model_output_dir', type=str, default='model_output')
+    parser.add_argument('--inference_model_file', type=str, default=None)
 
     # experiment-related parameters
     parser.add_argument('--experiment_type', type=str, default='TODO') #TODO: Add default experiment type
@@ -143,8 +144,12 @@ def main(args : argparse.Namespace):
         wandb_image_logging = args.wandb_image_logging
     )
     
-    # Train, validate and test the model according to the model arguments
-    metrics = experimenter.run_train_val_test(training_args, model_output_dir, timestamp, wandb_offline=args.wandb_offline)
+    if args.inference_model_file:
+        # Run inference on the test data using a pre-trained model
+        test_metrics = experimenter.run_inference(training_args, args.inference_model_file, timestamp, wandb_offline=args.wandb_offline)
+    else:
+        # Train, validate and test the model according to the model arguments
+        metrics = experimenter.run_train_val_test(training_args, model_output_dir, timestamp, wandb_offline=args.wandb_offline)
 
 def read_and_handle_args():
     """

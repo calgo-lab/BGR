@@ -29,5 +29,9 @@ class Experiment(ABC):
         pass
     
     @abstractmethod
+    def get_model(self) -> nn.Module:
+        pass
+    
+    @abstractmethod
     def plot_losses(self, model_output_dir: str, wandb_image_logging: bool) -> None:
         pass
