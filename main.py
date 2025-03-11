@@ -50,6 +50,9 @@ def create_parser() -> argparse.ArgumentParser:
 
     # experiment-related parameters
     parser.add_argument('--experiment_type', type=str, default='TODO') #TODO: Add default experiment type
+    parser.add_argument('--wandb_offline', action='store_true') # Defaults to false if not specified
+    parser.add_argument('--wandb_project_name', type=str, default='BGR_debugging')
+    parser.add_argument('--wandb_plot_logging', action='store_true') # Defaults to false if not specified
 
     # training-related parameters
     parser.add_argument('--learning_rate', type=float, default=1e-3)
@@ -60,9 +63,10 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu')
     parser.add_argument('--seed', type=int, default=2025)
     parser.add_argument('--num_experiment_runs', type=int, default=1)
-    parser.add_argument('--wandb_offline', action='store_true') # Defaults to false if not specified
-    parser.add_argument('--wandb_project_name', type=str, default='BGR_debugging')
-    parser.add_argument('--wandb_plot_logging', action='store_true') # Defaults to false if not specified
+    parser.add_argument('--no_save_checkpoints', dest='save_checkpoints', action='store_false')
+    parser.add_argument('--no_early_stopping', dest='early_stopping', action='store_false')
+    parser.add_argument('--early_stopping_patience', type=int, default=5)
+    parser.add_argument('--early_stopping_min_delta', type=float, default=1e-4)
     
     # hpo-related parameters
     

@@ -1,23 +1,45 @@
 import torch
 
-class EarlyStopping:
-    def __init__(self, patience=5, min_delta=0.0001, verbose=False):
+class Callback:
+    def __call__(self, model, metrics: dict):
+        raise NotImplementedError("Subclasses should implement this method")
+
+class EarlyStopping(Callback):
+    def __init__(self, patience=5, min_delta=0.0001, verbose=False, monitor="val_loss", mode="min"):
         """
         Args:
             patience (int): How many epochs to wait after last improvement.
             min_delta (float): Minimum change in monitored metric to qualify as improvement.
             verbose (bool): Whether to print early stopping messages.
+            monitor (str): Metric to monitor (e.g., "val_loss", "val_accuracy").
+            mode (str): "min" to stop when the metric decreases, "max" to stop when it increases.
         """
         self.patience = patience
         self.min_delta = min_delta
         self.verbose = verbose
-        self.best_loss = float('inf')
+        self.monitor = monitor
+        self.mode = mode
+        self.best_metric = None
         self.counter = 0
         self.should_stop = False
 
-    def __call__(self, val_loss):
-        if val_loss < self.best_loss - self.min_delta:
-            self.best_loss = val_loss
+        # Initialize comparison function
+        if mode == "min":
+            self.compare = lambda current, best: current < best - self.min_delta
+            self.best_metric = float("inf")
+        elif mode == "max":
+            self.compare = lambda current, best: current > best + self.min_delta
+            self.best_metric = float("-inf")
+        else:
+            raise ValueError("mode should be either 'min' or 'max'")
+
+    def __call__(self, model, metrics: dict):
+        metric_value = metrics.get(self.monitor)
+        if metric_value is None:
+            raise ValueError(f"EarlyStopping requires '{self.monitor}' in metrics")
+        
+        if self.compare(metric_value, self.best_metric):
+            self.best_metric = metric_value
             self.counter = 0
         else:
             self.counter += 1
@@ -26,8 +48,7 @@ class EarlyStopping:
             if self.counter >= self.patience:
                 self.should_stop = True
 
-
-class ModelCheckpoint:
+class ModelCheckpoint(Callback):
     def __init__(self, save_path, monitor="val_loss", mode="min", verbose=True):
         """
         Args:
@@ -52,14 +73,11 @@ class ModelCheckpoint:
         else:
             raise ValueError("mode should be either 'min' or 'max'")
 
-    def __call__(self, model, metric_value):
-        """
-        Checks if the model should be saved based on the monitored metric.
-
-        Args:
-            model (nn.Module): The PyTorch model to save.
-            metric_value (float): The current value of the monitored metric.
-        """
+    def __call__(self, model, metrics: dict):
+        metric_value = metrics.get(self.monitor)
+        if metric_value is None:
+            raise ValueError(f"ModelCheckpoint requires '{self.monitor}' in metrics")
+        
         if self.compare(metric_value, self.best_metric):
             self.best_metric = metric_value
             torch.save(model.state_dict(), self.save_path)

@@ -8,6 +8,7 @@ class TrainingArgs:
     """TODO: Docstring for TrainingArgs."""
     
     def __init__(self,
+        model_output_dir: str = "model_output",
         learning_rate: int = 1e-3,
         dropout: float = 0.1,
         batch_size: int = 64,
@@ -20,7 +21,11 @@ class TrainingArgs:
         loss_fn = nn.MSELoss(),
         wandb_logger = None,
         callbacks = None,
-        save_checkpoints = True):
+        save_checkpoints = True,
+        use_early_stopping = True,
+        early_stopping_patience = 5,
+        early_stopping_min_delta = 1e-4
+        ):
         
         self.learning_rate = learning_rate
         self.dropout = dropout
@@ -35,6 +40,12 @@ class TrainingArgs:
         self.wandb_logger = wandb_logger
         self.callbacks = callbacks
         self.save_checkpoints = save_checkpoints
+        self.use_early_stopping = use_early_stopping
+        self.early_stopping_patience = early_stopping_patience
+        self.early_stopping_min_delta = early_stopping_min_delta
+        
+        if self.callbacks is None:
+            self.init_default_callbacks(model_output_dir)
     
     @staticmethod
     def create_from_args(args : Namespace) -> 'TrainingArgs':
@@ -52,13 +63,25 @@ class TrainingArgs:
         return training_args
     
     def init_default_callbacks(self, model_output_dir : str) -> None:
-        # TODO: Maybe add these as parameters to the main.py
-        # TODO: Maybe Pytorch Lightning callbacks?
-        self.callbacks = [
-            EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=5, verbose=True)
-        ]
+        self.callbacks = []
+        
+        if self.use_early_stopping:
+            self.callbacks.append(
+                EarlyStopping(
+                    patience=self.early_stopping_patience,
+                    min_delta=self.early_stopping_min_delta,
+                    verbose=True,
+                    monitor="val_loss",
+                    mode="min"
+                )
+            )
         
         if self.save_checkpoints:
             self.callbacks.append(
-                ModelCheckpoint(save_path=model_output_dir, monitor="val_loss", mode="min", verbose=True)
+                ModelCheckpoint(
+                    save_path=model_output_dir,
+                    monitor="val_loss",
+                    mode="min", 
+                    verbose=True
+                )
             )
