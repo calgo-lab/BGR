@@ -51,17 +51,18 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument('--inference_model_file', type=str, default=None)
 
     # experiment-related parameters
-    parser.add_argument('--experiment_type', type=str, default='TODO') #TODO: Add default experiment type
-    parser.add_argument('--wandb_offline', action='store_true') # Defaults to false if not specified
+    parser.add_argument('--experiment_type', type=str, default='depth_experiment') #TODO: Add default experiment type
+    parser.add_argument('--wandb_online', dest='wandb_offline', action='store_false') # wandb_offline defaults to True if not specified
     parser.add_argument('--wandb_project_name', type=str, default='BGR_debugging')
     parser.add_argument('--wandb_plot_logging', action='store_true') # Defaults to false if not specified
 
     # training-related parameters
-    parser.add_argument('--learning_rate', type=float, default=1e-3)
+    parser.add_argument('--learning_rate', type=float, default=1e-4)
+    parser.add_argument('--weight_decay', type=float, default=1e-2)
     parser.add_argument('--dropout', type=float, default=0.1)
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--num_workers', type=int, default=16)
-    parser.add_argument('--num_epochs', type=int, default=100)
+    parser.add_argument('--num_epochs', type=int, default=20)
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu')
     parser.add_argument('--seed', type=int, default=2025)
     parser.add_argument('--no_save_checkpoints', dest='save_checkpoints', action='store_false') # save_checkpoints defaults to true if not specified
@@ -138,6 +139,7 @@ def main(args : argparse.Namespace):
         train_data, 
         val_data, 
         test_data,
+        dataprocessor,
         target = args.target,
         seed = args.seed,
         wandb_project_name = args.wandb_project_name,

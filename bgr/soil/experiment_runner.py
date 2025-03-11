@@ -3,10 +3,10 @@ import torch
 import torch.nn as nn
 import numpy as np
 import wandb
-import datetime
 
 from bgr.soil.training_args import TrainingArgs
 from bgr.soil.experiments import get_experiment
+from bgr.soil.data.horizon_tabular_data import HorizonDataProcessor
 
 class ExperimentRunner:
     """
@@ -21,6 +21,7 @@ class ExperimentRunner:
         train_data: pd.DataFrame, 
         val_data: pd.DataFrame, 
         test_data: pd.DataFrame,
+        dataprocessor: HorizonDataProcessor,
         target: str,
         wandb_project_name : str,
         seed: int = None,
@@ -34,6 +35,7 @@ class ExperimentRunner:
         self.train_data = train_data
         self.val_data = val_data
         self.test_data = test_data
+        self.dataprocessor = dataprocessor
         self.target = target
         self.wandb_project_name = wandb_project_name
         self.seed = seed
@@ -60,7 +62,7 @@ class ExperimentRunner:
         """
         try:
             # Get the experiment according to the specified type
-            experiment = get_experiment(self.experiment_type, self.target)
+            experiment = get_experiment(self.experiment_type, training_args, self.target, self.dataprocessor)
             
             # Initialize wandb
             self._init_wandb(wandb_offline, model_file_path, timestamp)
@@ -70,7 +72,7 @@ class ExperimentRunner:
             self._load_model(model_file_path, model)
             
             # Test the model
-            test_metrics = experiment.test(model, self.test_data, training_args, model_file_path)
+            test_metrics = experiment.test(model, self.test_data, model_file_path)
             wandb.log(test_metrics)
             
             return test_metrics
@@ -100,7 +102,7 @@ class ExperimentRunner:
         """
         try:
             # Get the experiment according to the specified type
-            experiment = get_experiment(self.experiment_type, self.target)
+            experiment = get_experiment(self.experiment_type, training_args, self.target, self.dataprocessor)
             
             # Initialize wandb
             self._init_wandb(wandb_offline, model_output_dir, timestamp)
@@ -110,7 +112,7 @@ class ExperimentRunner:
                 self._set_seed(self.seed)
             
             # Train, validate and test the model
-            model, metrics = experiment.train_and_validate(self.train_data, self.val_data, training_args, model_output_dir)
+            model, metrics = experiment.train_and_validate(self.train_data, self.val_data, model_output_dir)
             wandb.log(metrics)
             
             # Plot the losses
@@ -120,7 +122,7 @@ class ExperimentRunner:
             self._save_model(model, model_output_dir)
             
             # Test the model
-            test_metrics = experiment.test(model, self.test_data, training_args, model_output_dir)
+            test_metrics = experiment.test(model, self.test_data, model_output_dir)
             wandb.log(test_metrics)
             
             metrics.update(test_metrics)

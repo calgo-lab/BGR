@@ -7,11 +7,12 @@ class TrainingArgs:
     
     def __init__(self,
         model_output_dir: str = "model_output",
-        learning_rate: int = 1e-3,
+        learning_rate: int = 1e-4,
+        weight_decay: int = 1e-2,
         dropout: float = 0.1,
         batch_size: int = 64,
         num_workers: int = 16,
-        num_epochs: int = 100,
+        num_epochs: int = 20,
         device: str = 'cuda' if torch.cuda.is_available() else 'cpu',
         callbacks = None,
         save_checkpoints = True,
@@ -21,6 +22,7 @@ class TrainingArgs:
         ):
         
         self.learning_rate = learning_rate
+        self.weight_decay = weight_decay
         self.dropout = dropout
         self.batch_size = batch_size
         self.num_workers = num_workers
