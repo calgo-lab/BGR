@@ -1,8 +1,10 @@
 import torch
+from abc import ABC, abstractmethod
 
-class Callback:
+class Callback(ABC):
+    @abstractmethod
     def __call__(self, model, metrics: dict):
-        raise NotImplementedError("Subclasses should implement this method")
+        pass
 
 class EarlyStopping(Callback):
     def __init__(self, patience=5, min_delta=0.0001, verbose=False, monitor="val_loss", mode="min"):

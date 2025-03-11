@@ -63,8 +63,8 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu')
     parser.add_argument('--seed', type=int, default=2025)
     parser.add_argument('--num_experiment_runs', type=int, default=1)
-    parser.add_argument('--no_save_checkpoints', dest='save_checkpoints', action='store_false')
-    parser.add_argument('--no_early_stopping', dest='early_stopping', action='store_false')
+    parser.add_argument('--no_save_checkpoints', dest='save_checkpoints', action='store_false') # save_checkpoints defaults to true if not specified
+    parser.add_argument('--no_early_stopping', dest='use_early_stopping', action='store_false') # use_early_stopping defaults to true if not specified
     parser.add_argument('--early_stopping_patience', type=int, default=5)
     parser.add_argument('--early_stopping_min_delta', type=float, default=1e-4)
     
@@ -146,7 +146,7 @@ def main(args : argparse.Namespace):
     )
     
     # Train, validate and test the model according to the model arguments
-    experimenter.run_train_val_test(training_args, model_output_dir, wandb_offline=args.wandb_offline)
+    metrics = experimenter.run_train_val_test(training_args, model_output_dir, wandb_offline=args.wandb_offline)
 
 def read_and_handle_args():
     """
