@@ -121,11 +121,11 @@ class HorizonDataProcessor:
         Args:
             df (pd.DataFrame): DataFrame containing the data to be split.
             n_splits (int): Number of re-shuffling & splitting iterations. Default is 1.
-            test_size (float): Proportion of the dataset to include in the test split. Default is 0.2.
+            train_val_test_frac (list[float]): Split ratios. Default is [0.7, 0.15, 0.15].
             random_state (int): Random seed. Default is None.
         
         Returns:
-            Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: Training, validation  and test dataframes.
+            Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: Training, validation and test dataframes.
         """
         
         # Split dataset according to distribution of classes in categorical tabular features (including horizon labels)
@@ -134,19 +134,20 @@ class HorizonDataProcessor:
         # First split training apart from validation and test
         ml_split_1 = MultilabelStratifiedShuffleSplit(
             n_splits=n_splits,
-            test_size=train_val_test_frac[2] + train_val_test_frac[3],
+            test_size=train_val_test_frac[1] + train_val_test_frac[2],
             random_state=random_state
         )
         for train_idx, val_and_test_idx in ml_split_1.split(df, df_stratified_split_targets):
             train_df, val_and_test_df = df.iloc[train_idx], df.iloc[val_and_test_idx]
+            val_and_test_targets = df_stratified_split_targets.iloc[val_and_test_idx]
         
         # Second split validation and test
         ml_split_2 = MultilabelStratifiedShuffleSplit(
             n_splits=n_splits,
-            test_size=train_val_test_frac[3] / (train_val_test_frac[2] + train_val_test_frac[3]),
+            test_size=train_val_test_frac[2] / (train_val_test_frac[1] + train_val_test_frac[2]),
             random_state=random_state
         )
-        for val_idx, test_idx in ml_split_2.split(val_and_test_df, df_stratified_split_targets):
+        for val_idx, test_idx in ml_split_2.split(val_and_test_df, val_and_test_targets):
             val_df, test_df = val_and_test_df.iloc[val_idx], val_and_test_df.iloc[test_idx]
         
         return train_df, val_df, test_df
