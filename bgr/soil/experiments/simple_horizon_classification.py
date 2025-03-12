@@ -155,8 +155,8 @@ class SimpleHorizonClassificationExperiment(Experiment):
             avg_val_topk_acc = val_topk_correct / len(val_loader)
 
             epoch_metrics = {
-                'train_loss': avg_train_loss,
-                'val_loss': avg_val_loss,
+                'train_cosine_loss': avg_train_loss,
+                'val_cosine_loss': avg_val_loss,
                 'train_acc': avg_train_acc,
                 'val_acc': avg_val_acc,
                 'train_topk_correct': avg_train_topk_acc,
@@ -238,12 +238,12 @@ class SimpleHorizonClassificationExperiment(Experiment):
                 test_topk_correct += self.horizon_topk_acc(self.topk)(pred_horizon_embeddings, true_horizon_indices)
         
         test_metrics = {
-            'test_loss': test_loss_total / len(test_loader),
+            'test_cosine_loss': test_loss_total / len(test_loader),
             'test_acc': test_correct / len(test_loader),
             'test_topk_acc': test_topk_correct / len(test_loader)
         }
         
-        logger.info(f"\nTotal Test Cosine Loss: {test_metrics['test_loss']:.4f}, Test Acc: {test_metrics['test_acc']:.4f}, Test Top-{self.topk} Acc: {test_metrics['test_topk_acc']:.4f}")
+        logger.info(f"\nTotal Test Cosine Loss: {test_metrics['test_cosine_loss']:.4f}, Test Acc: {test_metrics['test_acc']:.4f}, Test Top-{self.topk} Acc: {test_metrics['test_topk_acc']:.4f}")
         
         return test_metrics
     
@@ -263,10 +263,13 @@ class SimpleHorizonClassificationExperiment(Experiment):
             'Cosine': (self.train_loss_history, self.val_loss_history)
         }
         acc_histories = {
+            'Accuracy': (self.train_acc_history, self.val_acc_history)
+        }
+        topk_acc_histories = {
             f'Top-{self.topk} Accuracy': (self.train_topk_acc_history, self.val_topk_acc_history)
         }
         
-        figure = plt.figure(figsize=(10, 10))
+        figure = plt.figure(figsize=(15, 7))
         for i, (title, (train_history, val_history)) in enumerate(loss_histories.items()):
             plt.subplot(2, 2, i + 1)
             plt.plot(range(1, complete_epochs), train_history, label=f'Train {title} Loss', marker='o', color='b')
@@ -276,8 +279,18 @@ class SimpleHorizonClassificationExperiment(Experiment):
             plt.ylabel('Loss')
             plt.legend()
             plt.grid()
-        
+            
         for i, (title, (train_history, val_history)) in enumerate(acc_histories.items()):
+            plt.subplot(2, 2, i + 2)
+            plt.plot(range(1, complete_epochs), train_history, label=f'Train {title}', marker='o', color='b')
+            plt.plot(range(1, complete_epochs), val_history, label=f'Validation {title}', marker='o', color='r')
+            plt.title(f'{title}')
+            plt.xlabel('Epoch')
+            plt.ylabel('Accuracy')
+            plt.legend()
+            plt.grid()
+        
+        for i, (title, (train_history, val_history)) in enumerate(topk_acc_histories.items()):
             plt.subplot(2, 2, i + 3)
             plt.plot(range(1, complete_epochs), train_history, label=f'Train {title}', marker='o', color='b')
             plt.plot(range(1, complete_epochs), val_history, label=f'Validation {title}', marker='o', color='r')
@@ -291,4 +304,4 @@ class SimpleHorizonClassificationExperiment(Experiment):
         
         plt.savefig(f'{model_output_dir}/losses_and_accuracies.png')
         if wandb_image_logging:
-            wandb.log({"Losses and Accuracies": wandb.Image(plt)})
+            wandb.log({"Losses and Accuracies": wandb.Image(figure)})
