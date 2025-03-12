@@ -49,7 +49,11 @@ class TrainingArgs:
                 # if the value is not None, update the attribute
                 if new_value is not None:
                     setattr(training_args, var_name, new_value)
-                    
+        
+        if hasattr(args, "model_output_dir"):
+            model_output_dir = getattr(args, "model_output_dir")
+            training_args.init_default_callbacks(model_output_dir)
+        
         return training_args
     
     def init_default_callbacks(self, model_output_dir : str) -> None:
