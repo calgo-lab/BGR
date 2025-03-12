@@ -69,7 +69,7 @@ class TrainingArgs:
         if self.save_checkpoints:
             self.callbacks.append(
                 ModelCheckpoint(
-                    save_path=model_output_dir,
+                    save_dir=model_output_dir,
                     monitor="val_loss",
                     mode="min", 
                     verbose=True

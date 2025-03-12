@@ -1,9 +1,10 @@
 import torch
+import os
 from abc import ABC, abstractmethod
 
 class Callback(ABC):
     @abstractmethod
-    def __call__(self, model, metrics: dict):
+    def __call__(self, model, metrics: dict, epoch: int):
         pass
 
 class EarlyStopping(Callback):
@@ -35,7 +36,7 @@ class EarlyStopping(Callback):
         else:
             raise ValueError("mode should be either 'min' or 'max'")
 
-    def __call__(self, model, metrics: dict):
+    def __call__(self, model, metrics: dict, epoch: int):
         metric_value = metrics.get(self.monitor)
         if metric_value is None:
             raise ValueError(f"EarlyStopping requires '{self.monitor}' in metrics")
@@ -51,7 +52,7 @@ class EarlyStopping(Callback):
                 self.should_stop = True
 
 class ModelCheckpoint(Callback):
-    def __init__(self, save_path, monitor="val_loss", mode="min", verbose=True):
+    def __init__(self, save_dir, monitor="val_loss", mode="min", verbose=True):
         """
         Args:
             save_path (str): Path to save the model checkpoint.
@@ -59,7 +60,7 @@ class ModelCheckpoint(Callback):
             mode (str): "min" to save when the metric decreases, "max" to save when it increases.
             verbose (bool): If True, prints messages when a new checkpoint is saved.
         """
-        self.save_path = save_path
+        self.save_dir = save_dir
         self.monitor = monitor
         self.mode = mode
         self.verbose = verbose
@@ -75,14 +76,16 @@ class ModelCheckpoint(Callback):
         else:
             raise ValueError("mode should be either 'min' or 'max'")
 
-    def __call__(self, model, metrics: dict):
+    def __call__(self, model, metrics: dict, epoch: int):
         metric_value = metrics.get(self.monitor)
         if metric_value is None:
             raise ValueError(f"ModelCheckpoint requires '{self.monitor}' in metrics")
         
         if self.compare(metric_value, self.best_metric):
-            self.best_metric = metric_value
-            torch.save(model.state_dict(), self.save_path)
+            self.best_metric = metric_value            
+            
+            filepath = os.path.join(self.save_dir, f"model_epoch_{epoch}.pt")
+            torch.save(model.state_dict(), filepath)
             if self.verbose:
-                print(f"Model checkpoint saved at '{self.save_path}' with {self.monitor}: {metric_value:.4f}")
+                print(f"Model checkpoint saved at '{filepath}' with {self.monitor}: {metric_value:.4f}")
 

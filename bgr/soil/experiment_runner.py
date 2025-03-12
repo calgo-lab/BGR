@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import wandb
+import os
 
 from bgr.soil.training_args import TrainingArgs
 from bgr.soil.experiments import get_experiment
@@ -25,7 +26,7 @@ class ExperimentRunner:
         target: str,
         wandb_project_name : str,
         seed: int = None,
-        wandb_image_logging: bool = False
+        wandb_plot_logging: bool = False
     ):
         """
         Initializes the ExperimentRunner with the given parameters.
@@ -39,7 +40,7 @@ class ExperimentRunner:
         self.target = target
         self.wandb_project_name = wandb_project_name
         self.seed = seed
-        self.wandb_image_logging = wandb_image_logging
+        self.wandb_plot_logging = wandb_plot_logging
     
     def run_inference(
         self,
@@ -116,7 +117,7 @@ class ExperimentRunner:
             wandb.log(metrics)
             
             # Plot the losses
-            experiment.plot_losses(model_output_dir, self.wandb_image_logging)
+            experiment.plot_losses(model_output_dir, self.wandb_plot_logging)
             
             # Save the model
             self._save_model(model, model_output_dir)
@@ -187,4 +188,4 @@ class ExperimentRunner:
             model_output_dir (str): The directory to save the model.
         """
         
-        torch.save(model.state_dict(), model_output_dir)
+        torch.save(model.state_dict(), os.path.join(model_output_dir, "model.pt"))

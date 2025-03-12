@@ -2,7 +2,7 @@ import argparse
 from pathlib import Path
 from ast import literal_eval
 import sys
-import datetime
+from datetime import datetime
 
 import torch
 
@@ -125,7 +125,7 @@ def main(args : argparse.Namespace):
     horizon_data = dataprocessor.load_processed_data()
     
     # Split data
-    train_data, val_data, test_data = dataprocessor.multi_label_stratified_shuffle_split(horizon_data, split_date=args.test_split_date, random_state=args.seed)
+    train_data, val_data, test_data = dataprocessor.multi_label_stratified_shuffle_split(horizon_data, train_val_test_frac=args.train_val_test_frac, random_state=args.seed)
     print(f"Train data shape: {train_data.shape}")
     print(f"Validation data shape: {val_data.shape}")
     print(f"Test data shape: {test_data.shape}")
@@ -143,7 +143,7 @@ def main(args : argparse.Namespace):
         target = args.target,
         seed = args.seed,
         wandb_project_name = args.wandb_project_name,
-        wandb_image_logging = args.wandb_image_logging
+        wandb_plot_logging = args.wandb_plot_logging
     )
     
     if args.inference_model_file:

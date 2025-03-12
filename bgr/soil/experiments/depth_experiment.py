@@ -166,7 +166,7 @@ class DepthExperiment(Experiment):
                 'val_iou': avg_val_iou
             }
             for callback in self.training_args.callbacks:
-                callback(model, epoch_metrics)
+                callback(model, epoch_metrics, epoch)
             
             # Apply the scheduler with validation loss
             scheduler.step(avg_val_loss)
@@ -180,6 +180,13 @@ class DepthExperiment(Experiment):
             logger.info(f"Epoch {epoch+1}, Total Training Depth Loss: {avg_train_loss:.4f}, Training IoU: {avg_train_iou:.4f}")
             logger.info(f"\nTotal Validation Depth Loss: {avg_val_loss:.4f}, Validation IoU: {avg_val_iou:.4f}")
             logger.info(f"Current LR: {current_lr}")
+            
+            # Check early stopping
+            if self.training_args.use_early_stopping:
+                early_stopping = [cb for cb in self.training_args.callbacks if type(cb).__name__ == 'EarlyStopping'][0]
+                if early_stopping.should_stop:
+                    logger.info("Early stopping activated.")
+                    break
         
         self.trained = True
         return model, epoch_metrics
