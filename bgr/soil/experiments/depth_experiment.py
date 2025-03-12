@@ -74,7 +74,7 @@ class DepthExperiment(Experiment):
         self.train_iou_history, self.val_iou_history = [], []
 
         for epoch in range(self.training_args.num_epochs):
-            print(f"Epoch {epoch + 1}/{self.training_args.num_epochs}")
+            logger.info(f"Epoch {epoch + 1}/{self.training_args.num_epochs}")
             
             # Training
             model.train()
@@ -243,10 +243,14 @@ class DepthExperiment(Experiment):
                 # Calculate IoU
                 test_iou += depth_iou(pred_depths, padded_true_depths, model.stop_token)
         
-        return {
+        test_metrics = {
             'test_loss': test_loss_total / len(test_loader),
             'test_iou': test_iou / len(test_loader)
         }
+        
+        logger.info(f"\nTotal Test Depth Loss: {test_metrics['test_loss']:.4f}, Test IoU: {test_metrics['test_iou']:.4f}")
+        
+        return test_metrics
     
     def get_model(self) -> nn.Module:
         return HorizonSegmenter(

@@ -114,11 +114,11 @@ def main(args : argparse.Namespace):
     Args:
         args (argparse.Namespace): Namespace object containing all the arguments required for the execution of the main function.
     """
-    
+    # TODO Fix model output dir in training_args and watch for the prints vs logger.info()
     # Create model output path
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    model_output_dir = f"{args.model_output_dir}/{args.experiment_type}_{timestamp}"
-    Path(model_output_dir).mkdir(parents=True, exist_ok=True)
+    args.model_output_dir = f"{args.model_output_dir}/{args.experiment_type}_{timestamp}"
+    Path(args.model_output_dir).mkdir(parents=True, exist_ok=True)
 
     # Load data
     dataprocessor = HorizonDataProcessor(args.label_embedding_path, args.data_folder_path)
@@ -151,7 +151,7 @@ def main(args : argparse.Namespace):
         test_metrics = experimenter.run_inference(training_args, args.inference_model_file, timestamp, wandb_offline=args.wandb_offline)
     else:
         # Train, validate and test the model according to the model arguments
-        metrics = experimenter.run_train_val_test(training_args, model_output_dir, timestamp, wandb_offline=args.wandb_offline)
+        metrics = experimenter.run_train_val_test(training_args, args.model_output_dir, timestamp, wandb_offline=args.wandb_offline)
 
 def read_and_handle_args():
     """
