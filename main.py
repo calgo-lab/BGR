@@ -2,7 +2,7 @@ import argparse
 from pathlib import Path
 from ast import literal_eval
 import sys
-import datetime
+from datetime import datetime
 
 import torch
 
@@ -51,17 +51,18 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument('--inference_model_file', type=str, default=None)
 
     # experiment-related parameters
-    parser.add_argument('--experiment_type', type=str, default='TODO') #TODO: Add default experiment type
-    parser.add_argument('--wandb_offline', action='store_true') # Defaults to false if not specified
+    parser.add_argument('--experiment_type', type=str, default='depth_experiment') #TODO: Add default experiment type
+    parser.add_argument('--wandb_online', dest='wandb_offline', action='store_false') # wandb_offline defaults to True if not specified
     parser.add_argument('--wandb_project_name', type=str, default='BGR_debugging')
     parser.add_argument('--wandb_plot_logging', action='store_true') # Defaults to false if not specified
 
     # training-related parameters
-    parser.add_argument('--learning_rate', type=float, default=1e-3)
+    parser.add_argument('--learning_rate', type=float, default=1e-4)
+    parser.add_argument('--weight_decay', type=float, default=1e-2)
     parser.add_argument('--dropout', type=float, default=0.1)
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--num_workers', type=int, default=16)
-    parser.add_argument('--num_epochs', type=int, default=100)
+    parser.add_argument('--num_epochs', type=int, default=20)
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu')
     parser.add_argument('--seed', type=int, default=2025)
     parser.add_argument('--no_save_checkpoints', dest='save_checkpoints', action='store_false') # save_checkpoints defaults to true if not specified
@@ -113,18 +114,18 @@ def main(args : argparse.Namespace):
     Args:
         args (argparse.Namespace): Namespace object containing all the arguments required for the execution of the main function.
     """
-    
+    # TODO Fix model output dir in training_args and watch for the prints vs logger.info()
     # Create model output path
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    model_output_dir = f"{args.model_output_dir}/{args.experiment_type}_{timestamp}"
-    Path(model_output_dir).mkdir(parents=True, exist_ok=True)
+    args.model_output_dir = f"{args.model_output_dir}/{args.experiment_type}_{timestamp}"
+    Path(args.model_output_dir).mkdir(parents=True, exist_ok=True)
 
     # Load data
     dataprocessor = HorizonDataProcessor(args.label_embedding_path, args.data_folder_path)
     horizon_data = dataprocessor.load_processed_data()
     
     # Split data
-    train_data, val_data, test_data = dataprocessor.multi_label_stratified_shuffle_split(horizon_data, split_date=args.test_split_date, random_state=args.seed)
+    train_data, val_data, test_data = dataprocessor.multi_label_stratified_shuffle_split(horizon_data, train_val_test_frac=args.train_val_test_frac, random_state=args.seed)
     print(f"Train data shape: {train_data.shape}")
     print(f"Validation data shape: {val_data.shape}")
     print(f"Test data shape: {test_data.shape}")
@@ -138,10 +139,11 @@ def main(args : argparse.Namespace):
         train_data, 
         val_data, 
         test_data,
+        dataprocessor,
         target = args.target,
         seed = args.seed,
         wandb_project_name = args.wandb_project_name,
-        wandb_image_logging = args.wandb_image_logging
+        wandb_plot_logging = args.wandb_plot_logging
     )
     
     if args.inference_model_file:
@@ -149,7 +151,7 @@ def main(args : argparse.Namespace):
         test_metrics = experimenter.run_inference(training_args, args.inference_model_file, timestamp, wandb_offline=args.wandb_offline)
     else:
         # Train, validate and test the model according to the model arguments
-        metrics = experimenter.run_train_val_test(training_args, model_output_dir, timestamp, wandb_offline=args.wandb_offline)
+        metrics = experimenter.run_train_val_test(training_args, args.model_output_dir, timestamp, wandb_offline=args.wandb_offline)
 
 def read_and_handle_args():
     """
