@@ -57,6 +57,7 @@ class HorizonDataProcessor:
         ]
         # For now, leave out Bodenart and Bodenfarbe. Also, we don't need to stratify wrt stones (it's numerical)
         self.stratified_split_targets = ['Karbonat', 'Humusgehaltsklasse', 'Durchwurzelung', 'Horizontsymbol_relevant']
+        self.embeddings_dict = None
         
     @staticmethod
     def _validate_paths(label_embeddings_path: str, data_folder_path: str) -> None:
@@ -263,8 +264,9 @@ class HorizonDataProcessor:
             pd.DataFrame: DataFrame with processed target column.
         """
         with open(self.label_embeddings_path, 'rb') as handle:
-            emb_dict = pickle.load(handle)
-        dict_mapping = {key.strip('.'): value for key, value in emb_dict['label2ind'].items()}
+            self.embeddings_dict = pickle.load(handle)
+        
+        dict_mapping = {key.strip('.'): value for key, value in self.embeddings_dict['label2ind'].items()}
         df[self.target] = df[self.target].str.replace('+', '-', regex=False)
         df[self.target] = df[self.target].str.replace('°', '-', regex=False)
         df[self.target] = df[self.target].str.replace(r'\d+$', '', regex=True)

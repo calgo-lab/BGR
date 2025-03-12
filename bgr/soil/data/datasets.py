@@ -67,3 +67,75 @@ class ImageTabularDataset(Dataset):
         else:
             return image, tabular_features
 
+class SegmentsTabularDataset(Dataset):
+    def __init__(
+        self,
+        dataframe,
+        segment_size=(512, 1024),
+        normalize=None,
+        path_column='file',
+        depth_column='Untergrenze',
+        label_column='Horizontsymbol_relevant', # TODO: Maybe this doesnt work?
+        max_segments=8,
+        feature_columns=None
+    ):
+        self.dataframe = dataframe
+        self.segment_size = segment_size
+        self.normalize = normalize
+        self.path_column = path_column
+        self.depth_column = depth_column
+        self.label_column = label_column
+        self.max_segments = max_segments
+        self.feature_columns = feature_columns
+        
+        if self.normalize is None:
+            self.normalize = transforms.Compose([
+                transforms.ToTensor()
+            ])
+        
+    def __len__(self):
+        return len(self.dataframe)
+
+    def __getitem__(self, index):
+        row = self.dataframe.iloc[index]
+        
+        # Extract the image path from the DataFrame, read and resize image
+        image_path = row[self.path_column]
+        image = Image.open(image_path)
+        
+        # Convert normalized depth markers to pixel indices
+        pixel_depths = [int(depth * image.height) for depth in [0.0] + row[self.depth_column]]  # Add 0.0 for upmost bound
+            
+        # Crop to segments
+        segments = []
+        labels = []
+        for i in range(len(pixel_depths) - 1):
+            upper, lower = pixel_depths[i], pixel_depths[i + 1]
+            
+            # Crop and resize the segment
+            segment = image.crop((0, upper, image.width, lower))
+            segment = segment.resize(self.segment_size)
+            segment = self.normalize(segment)
+            segments.append(segment)
+        
+            # Extract the depth and label
+            label = torch.tensor(row[self.label_column][i], dtype=torch.long)
+            labels.append(label)
+        
+        # Pad segments and labels to ensure consistent sizes
+        while len(segments) < self.max_segments:
+            segments.append(torch.zeros_like(segments[0]))
+            labels.append(torch.tensor(-1, dtype=torch.long))  # Use -1 as a padding label
+
+        # Convert segments and labels to tensors
+        segments = torch.stack(segments)
+        labels = torch.tensor(labels, dtype=torch.long)
+
+        if self.feature_columns:
+            # Extract tabular features from the DataFrame (as numerical values)
+            tabular_features_array = row[self.feature_columns].astype(float).values
+            tabular_features = torch.tensor(tabular_features_array, dtype=torch.float32)
+        
+            return segments, tabular_features, labels
+        else:
+            return segments, labels
