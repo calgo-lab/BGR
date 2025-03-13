@@ -107,6 +107,7 @@ class ExperimentRunner:
             
             # Initialize wandb
             self._init_wandb(wandb_offline, model_output_dir, timestamp)
+            wandb.config.update(training_args.__dict__)
             
             # Set the seed
             if self.seed is not None:
