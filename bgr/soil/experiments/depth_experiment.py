@@ -1,3 +1,4 @@
+from __future__ import annotations
 import logging
 import pandas as pd
 import torch
@@ -8,10 +9,14 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import wandb
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from bgr.soil.training_args import TrainingArgs
+
 
 from bgr.soil.data.horizon_tabular_data import HorizonDataProcessor
 from bgr.soil.experiments import Experiment
-from bgr.soil.training_args import TrainingArgs
 from bgr.soil.modelling.general_models import HorizonSegmenter
 from bgr.soil.metrics import DepthMarkerLoss, depth_iou
 from bgr.soil.utils import pad_tensor
@@ -22,7 +27,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class DepthExperiment(Experiment):
-    def __init__(self, training_args: TrainingArgs, target: str, dataprocessor: HorizonDataProcessor):
+    def __init__(self, training_args: 'TrainingArgs', target: str, dataprocessor: HorizonDataProcessor):
         self.training_args = training_args
         self.target = target
         self.dataprocessor = dataprocessor
@@ -285,3 +290,7 @@ class DepthExperiment(Experiment):
         plt.savefig(f'{model_output_dir}/losses.png')
         if wandb_image_logging:
             wandb.log({"Losses": wandb.Image(plt)})
+            
+    @staticmethod
+    def get_experiment_hyperparameters() -> dict:
+        return {}

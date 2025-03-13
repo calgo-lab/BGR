@@ -1,3 +1,4 @@
+from __future__ import annotations
 import logging
 import numpy as np
 import pandas as pd
@@ -10,20 +11,24 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import wandb
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from bgr.soil.training_args import TrainingArgs
 
 from bgr.soil.data.horizon_tabular_data import HorizonDataProcessor
 from bgr.soil.experiments import Experiment
-from bgr.soil.training_args import TrainingArgs
 from bgr.soil.modelling.general_models import SimpleHorizonClassifierWithTabulars
 from bgr.soil.metrics import TopKHorizonAccuracy
 from bgr.soil.data.datasets import SegmentsTabularDataset
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
-    def __init__(self, training_args: TrainingArgs, target: str, dataprocessor: HorizonDataProcessor):
+    def __init__(self, training_args: 'TrainingArgs', target: str, dataprocessor: HorizonDataProcessor):
         self.training_args = training_args
         self.target = target
         self.dataprocessor = dataprocessor
@@ -39,6 +44,11 @@ class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]), # Normalize with ImageNet statistics
         ])
+        
+        # Retrieve the experiment hyperparameters
+        defaults = SimpleHorizonClassificationWithTabularsExperiment.get_experiment_hyperparameters()
+        for key in defaults:
+            setattr(self, key, self.training_args.hyperparameters.get(key, defaults[key]))
     
     def train_and_validate(self,
         train_df: pd.DataFrame,
@@ -174,7 +184,9 @@ class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
         return SimpleHorizonClassifierWithTabulars(
             geo_temp_input_dim=len(self.dataprocessor.geotemp_img_infos) - 2, # without index and img path
             segments_tabular_input_dim=len(self.segments_tabular_feature_columns),
-            geo_temp_output_dim=256,
+            segments_output_dim=self.segments_output_dim,
+            segments_tabular_output_dim=self.segments_tabular_output_dim,
+            geo_temp_output_dim=self.geo_temp_output_dim,
             embedding_dim=np.shape(self.dataprocessor.embeddings_dict['embedding'])[1]
         )
     
@@ -309,3 +321,11 @@ class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
             avg_eval_topk_acc = eval_topk_correct / len(eval_loader)
             
         return avg_eval_loss,avg_eval_acc,avg_eval_topk_acc
+    
+    @staticmethod
+    def get_experiment_hyperparameters():
+        return {
+            'segments_output_dim': 512,
+            'segments_tabular_output_dim': 256,
+            'geo_temp_output_dim': 256
+        }

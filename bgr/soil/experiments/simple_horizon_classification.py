@@ -1,3 +1,4 @@
+from __future__ import annotations
 import logging
 import numpy as np
 import pandas as pd
@@ -10,10 +11,13 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import wandb
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from bgr.soil.training_args import TrainingArgs
 
 from bgr.soil.data.horizon_tabular_data import HorizonDataProcessor
 from bgr.soil.experiments import Experiment
-from bgr.soil.training_args import TrainingArgs
 from bgr.soil.modelling.general_models import SimpleHorizonClassifier
 from bgr.soil.metrics import TopKHorizonAccuracy
 from bgr.soil.data.datasets import SegmentsTabularDataset
@@ -23,7 +27,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class SimpleHorizonClassificationExperiment(Experiment):
-    def __init__(self, training_args: TrainingArgs, target: str, dataprocessor: HorizonDataProcessor):
+    def __init__(self, training_args: 'TrainingArgs', target: str, dataprocessor: HorizonDataProcessor):
         self.training_args = training_args
         self.target = target
         self.dataprocessor = dataprocessor
@@ -302,3 +306,7 @@ class SimpleHorizonClassificationExperiment(Experiment):
             avg_eval_topk_acc = eval_topk_correct / len(eval_loader)
             
         return avg_eval_loss,avg_eval_acc,avg_eval_topk_acc
+    
+    @staticmethod
+    def get_experiment_hyperparameters():
+        return {}

@@ -12,3 +12,13 @@ def get_experiment(experiment_type, training_args, target, dataprocessor) -> Exp
         return SimpleHorizonClassificationWithTabularsExperiment(training_args, target, dataprocessor)
     else:
         raise ValueError(f"Unknown experiment type: {experiment_type}")
+    
+def get_experiment_hyperparameters(experiment_type) -> dict:
+    if experiment_type == "depth_experiment":
+        return DepthExperiment.get_experiment_hyperparameters()
+    elif experiment_type == "simple_horizon_classification":
+        return SimpleHorizonClassificationExperiment.get_experiment_hyperparameters()
+    elif experiment_type == "simple_horizon_classification_with_tabulars":
+        return SimpleHorizonClassificationWithTabularsExperiment.get_experiment_hyperparameters()
+    else:
+        raise ValueError(f"Unknown experiment type: {experiment_type}")

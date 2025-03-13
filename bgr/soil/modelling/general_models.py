@@ -200,15 +200,23 @@ class SimpleHorizonClassifierWithTabulars(nn.Module):
         self,
         geo_temp_input_dim,
         segments_tabular_input_dim,
-        geo_temp_output_dim=32,
+        segments_output_dim=512,
+        segments_tabular_output_dim=64,
+        geo_temp_output_dim=64,
         embedding_dim=61
     ):
         super(SimpleHorizonClassifierWithTabulars, self).__init__()
         
-        self.segment_encoder = PatchCNNEncoder(patch_size=512, patch_stride=512)
+        self.segment_encoder = PatchCNNEncoder(patch_size=512, patch_stride=512, output_dim=segments_output_dim)
         self.geo_temp_encoder = GeoTemporalEncoder(geo_temp_input_dim, geo_temp_output_dim)
         
-        self.horizon_embedder = HorizonEmbedder(input_dim=self.segment_encoder.num_img_features + geo_temp_output_dim + segments_tabular_input_dim, output_dim=embedding_dim)
+        # Simple tabular encoder for the segment-specific tabular features
+        self.segments_tabular_encoder = nn.Sequential(
+            nn.Linear(segments_tabular_input_dim, segments_tabular_output_dim),
+            nn.ReLU()
+        )
+        
+        self.horizon_embedder = HorizonEmbedder(input_dim=self.segment_encoder.num_img_features + geo_temp_output_dim + segments_tabular_output_dim, output_dim=embedding_dim)
         
     def forward(self, segments, segments_tabular_features, geo_temp_features):
         batch_size, num_segments, C, H, W = segments.shape
@@ -221,8 +229,9 @@ class SimpleHorizonClassifierWithTabulars(nn.Module):
             segment_features_list.append(segment_features)
         segment_features = torch.stack(segment_features_list, dim=1)
         
+        segments_tabular_features = self.segments_tabular_encoder(segments_tabular_features)
+        
         # Concatenate segment features with segment-specific tabular features
-        # TODO: Maybe the segments_tabular_features should be processed with an MLP first? So the dimension is closer to the segment features
         segment_features = torch.cat([segment_features, segments_tabular_features], dim=-1)
         
         geo_temp_features = self.geo_temp_encoder(geo_temp_features)
