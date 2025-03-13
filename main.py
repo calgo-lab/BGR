@@ -9,6 +9,7 @@ import torch
 from bgr.soil.data.horizon_tabular_data import HorizonDataProcessor
 from bgr.soil.experiment_runner import ExperimentRunner
 from bgr.soil.training_args import TrainingArgs
+import pytz
 
 def create_parser() -> argparse.ArgumentParser:
     """
@@ -114,9 +115,9 @@ def main(args : argparse.Namespace):
     Args:
         args (argparse.Namespace): Namespace object containing all the arguments required for the execution of the main function.
     """
-    # TODO Fix model output dir in training_args and watch for the prints vs logger.info()
     # Create model output path
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    berlin_tz = pytz.timezone('Europe/Berlin')
+    timestamp = datetime.now(berlin_tz).strftime("%Y-%m-%d_%H-%M-%S")
     args.model_output_dir = f"{args.model_output_dir}/{args.experiment_type}_{timestamp}"
     Path(args.model_output_dir).mkdir(parents=True, exist_ok=True)
 
