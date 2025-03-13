@@ -78,8 +78,8 @@ class DepthExperiment(Experiment):
         self.train_loss_history, self.val_loss_history = [], []
         self.train_iou_history, self.val_iou_history = [], []
 
-        for epoch in range(self.training_args.num_epochs):
-            logger.info(f"Epoch {epoch + 1}/{self.training_args.num_epochs}")
+        for epoch in range(1, self.training_args.num_epochs + 1):
+            logger.info(f"Epoch {epoch}/{self.training_args.num_epochs}")
             
             # Training
             model.train()

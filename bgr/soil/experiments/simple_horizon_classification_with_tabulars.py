@@ -86,9 +86,9 @@ class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
         self.train_acc_history, self.val_acc_history = [], []
         self.train_topk_acc_history, self.val_topk_acc_history = [], []
 
-        for epoch in range(self.training_args.num_epochs):
+        for epoch in range(1, self.training_args.num_epochs + 1):
             print("--------------------------------")
-            logger.info(f"Epoch {epoch + 1}/{self.training_args.num_epochs}")
+            logger.info(f"Epoch {epoch}/{self.training_args.num_epochs}")
             
             # Training loop
             model.train()
@@ -99,7 +99,7 @@ class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
             avg_val_loss, avg_val_acc, avg_val_topk_acc = self._evaluate_model(val_loader, self.training_args.device, model)
 
             epoch_metrics = {
-                'epoch' : epoch+1,
+                'epoch' : epoch,
                 'train_loss': avg_train_loss,
                 'val_loss': avg_val_loss,
                 'train_acc': avg_train_acc,
