@@ -46,7 +46,7 @@ class SimpleHorizonClassificationExperiment(Experiment):
         train_dataset = SegmentsTabularDataset(
             dataframe=train_df,
             normalize=self.image_normalization,
-            label_column='Horizontsymbol_relevant',
+            label_column=self.target,
             feature_columns=self.dataprocessor.geotemp_img_infos[:-1] # without 'file'
         )
         train_loader = DataLoader(train_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
@@ -54,15 +54,13 @@ class SimpleHorizonClassificationExperiment(Experiment):
         val_dataset = SegmentsTabularDataset(
             dataframe=val_df,
             normalize=self.image_normalization,
-            label_column='Horizontsymbol_relevant',
+            label_column=self.target,
             feature_columns=self.dataprocessor.geotemp_img_infos[:-1] # without 'file'
         )
         val_loader = DataLoader(val_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
-        device = self.training_args.device
-        
         model = self.get_model()
-        model.to(device)
+        model.to(self.training_args.device)
         
         lr = self.training_args.learning_rate
         weight_decay = self.training_args.weight_decay
@@ -76,87 +74,18 @@ class SimpleHorizonClassificationExperiment(Experiment):
         for epoch in range(self.training_args.num_epochs):
             logger.info(f"Epoch {epoch + 1}/{self.training_args.num_epochs}")
             
-            # Training
+            # Training loop
             model.train()
-            train_loss_total = 0.0
-            train_correct = 0
-            train_topk_correct = 0
-            train_loader_tqdm = tqdm(train_loader, desc="Training", leave=False)
-            for batch in train_loader_tqdm:
-                segments, geotemp_features, padded_true_horizon_indices = batch
-                segments, geotemp_features, padded_true_horizon_indices = segments.to(device), geotemp_features.to(device), padded_true_horizon_indices.to(device)
-
-                optimizer.zero_grad() # otherwise, PyTorch accumulates the gradients during backprop
-
-                # Predict depth markers (as padded tensors)
-                padded_pred_horizon_embeddings = model(segments=segments, geo_temp_features=geotemp_features[:, 1:]) # 'index' column not used in model
-                
-                true_horizon_embeddings = torch.stack([torch.tensor(self.dataprocessor.embeddings_dict['embedding'][lab.item()]) for lab in padded_true_horizon_indices.view(-1) if lab != -1]).to(device)
-                pred_horizon_embeddings = torch.stack([pred for pred, lab in zip(padded_pred_horizon_embeddings.view(-1, padded_pred_horizon_embeddings.size(-1)), padded_true_horizon_indices.view(-1)) if lab != -1]).to(device)
-                true_horizon_indices = padded_true_horizon_indices.view(-1)[padded_true_horizon_indices.view(-1) != -1]
-                
-                # Normalize embeddings for the cosine loss, true embeddings are already normalized
-                pred_horizon_embeddings = F.normalize(pred_horizon_embeddings, p=2, dim=1)
-                
-                # Compute individual losses, then sum them together for backprop
-                # Create a dummy "same class" tensor with 1s for the cosine similarity
-                same_class = torch.ones(pred_horizon_embeddings.size(0)).to(device)
-                train_loss = self.cosine_loss(pred_horizon_embeddings, true_horizon_embeddings, same_class)
-                train_loss.backward()
-                clip_grad_norm_(model.parameters(), max_norm=1.0)
-                optimizer.step()
-
-                # Calculate batch losses to total loss
-                train_loss_total += train_loss.item()
-                train_correct += self.horizon_topk_acc(1)(pred_horizon_embeddings, true_horizon_indices)
-                train_topk_correct += self.horizon_topk_acc(self.topk)(pred_horizon_embeddings, true_horizon_indices)
-
-                train_loader_tqdm.set_postfix(loss=train_loss.item())
-
-            # Average losses and iou at the end of the epoch
-            avg_train_loss = train_loss_total / len(train_loader)
-            avg_train_acc = train_correct / len(train_loader)
-            avg_train_topk_acc = train_topk_correct / len(train_loader)
+            avg_train_loss, avg_train_acc, avg_train_topk_acc = self._train_model(train_loader, self.training_args.device, model, optimizer)
 
             # Evaluation loop
             model.eval() # Set model in evaluation mode before running inference
-            val_loss_total = 0.0
-            val_correct = 0
-            val_topk_correct = 0
-            val_loader_tqdm = tqdm(val_loader, desc="Evaluating", leave=False)
-            with torch.no_grad():
-                for batch in val_loader_tqdm:
-                    segments, geotemp_features, padded_true_horizon_indices = batch
-                    segments, geotemp_features, padded_true_horizon_indices = segments.to(device), geotemp_features.to(device), padded_true_horizon_indices.to(device)
-
-                    # Predict depth markers (as padded tensors)
-                    padded_pred_horizon_embeddings = model(segments=segments, geo_temp_features=geotemp_features[:, 1:]) # 'index' column not used in model
-                    
-                    true_horizon_embeddings = torch.stack([torch.tensor(self.dataprocessor.embeddings_dict['embedding'][lab.item()]) for lab in padded_true_horizon_indices.view(-1) if lab != -1]).to(device)
-                    pred_horizon_embeddings = torch.stack([pred for pred, lab in zip(padded_pred_horizon_embeddings.view(-1, padded_pred_horizon_embeddings.size(-1)), padded_true_horizon_indices.view(-1)) if lab != -1]).to(device)
-                    true_horizon_indices = padded_true_horizon_indices.view(-1)[padded_true_horizon_indices.view(-1) != -1]
-                    
-                    # Normalize embeddings for the cosine loss, true embeddings are already normalized
-                    pred_horizon_embeddings = F.normalize(pred_horizon_embeddings, p=2, dim=1)
-                    
-                    # Compute batch losses
-                    # Create a dummy "same class" tensor with 1s for the cosine similarity
-                    same_class = torch.ones(pred_horizon_embeddings.size(0)).to(device)
-                    val_loss = self.cosine_loss(pred_horizon_embeddings, true_horizon_embeddings, same_class)
-
-                    # Add batch losses to total loss
-                    val_loss_total += val_loss.item()
-                    val_correct += self.horizon_topk_acc(1)(pred_horizon_embeddings, true_horizon_indices)
-                    val_topk_correct += self.horizon_topk_acc(self.topk)(pred_horizon_embeddings, true_horizon_indices)
-
-            # Average losses and iou at the end of the epoch
-            avg_val_loss = val_loss_total / len(val_loader)
-            avg_val_acc = val_correct / len(val_loader)
-            avg_val_topk_acc = val_topk_correct / len(val_loader)
+            avg_val_loss, avg_val_acc, avg_val_topk_acc = self._evaluate_model(val_loader, self.training_args.device, model)
 
             epoch_metrics = {
-                'train_cosine_loss': avg_train_loss,
-                'val_cosine_loss': avg_val_loss,
+                'epoch' : epoch+1,
+                'train_loss': avg_train_loss,
+                'val_loss': avg_val_loss,
                 'train_acc': avg_train_acc,
                 'val_acc': avg_val_acc,
                 'train_topk_correct': avg_train_topk_acc,
@@ -164,6 +93,9 @@ class SimpleHorizonClassificationExperiment(Experiment):
             }
             for callback in self.training_args.callbacks:
                 callback(model, epoch_metrics, epoch)
+            
+            # Log metrics to wandb
+            wandb.log(epoch_metrics)
             
             # Apply the scheduler with validation loss
             scheduler.step(avg_val_loss)
@@ -187,7 +119,16 @@ class SimpleHorizonClassificationExperiment(Experiment):
                     break
         
         self.trained = True
-        return model, epoch_metrics
+        return_metrics = {
+            'Train Cosine Loss' : self.train_loss_history[-1],
+            'Validation Cosine Loss' : self.val_loss_history[-1],
+            'Train Accuracy' : self.train_acc_history[-1],
+            'Validation Accuracy' : self.val_acc_history[-1],
+            'Train Top-5 Accuracy' : self.train_topk_acc_history[-1],
+            'Validation Top-5 Accuracy' : self.val_topk_acc_history[-1]
+        }
+        
+        return model, return_metrics
     
     def test(self,
         model: nn.Module,
@@ -198,52 +139,24 @@ class SimpleHorizonClassificationExperiment(Experiment):
         test_dataset = SegmentsTabularDataset(
             dataframe=test_df,
             normalize=self.image_normalization,
-            label_column='Horizontsymbol_relevant',
+            label_column=self.target,
             feature_columns=self.dataprocessor.geotemp_img_infos[:-1] # without 'file'
         )
         test_loader = DataLoader(test_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
-        device = self.training_args.device
-        model.to(device)
+        model.to(self.training_args.device)
         
         # Evaluation loop
         model.eval() # Set model in evaluation mode before running inference
-        test_loss_total = 0.0
-        test_correct = 0
-        test_topk_correct = 0
-        test_loader_tqdm = tqdm(test_loader, desc="Evaluating", leave=False)
-        with torch.no_grad():
-            for batch in test_loader_tqdm:
-                segments, geotemp_features, padded_true_horizon_indices = batch
-                segments, geotemp_features, padded_true_horizon_indices = segments.to(device), geotemp_features.to(device), padded_true_horizon_indices.to(device)
-
-                # Predict depth markers (as padded tensors)
-                padded_pred_horizon_embeddings = model(segments=segments, geo_temp_features=geotemp_features[:, 1:]) # 'index' column not used in model
-                
-                true_horizon_embeddings = torch.stack([torch.tensor(self.dataprocessor.embeddings_dict['embedding'][lab.item()]) for lab in padded_true_horizon_indices.view(-1) if lab != -1]).to(device)
-                pred_horizon_embeddings = torch.stack([pred for pred, lab in zip(padded_pred_horizon_embeddings.view(-1, padded_pred_horizon_embeddings.size(-1)), padded_true_horizon_indices.view(-1)) if lab != -1]).to(device)
-                true_horizon_indices = padded_true_horizon_indices.view(-1)[padded_true_horizon_indices.view(-1) != -1]
-
-                # Normalize embeddings for the cosine loss, true embeddings are already normalized
-                pred_horizon_embeddings = F.normalize(pred_horizon_embeddings, p=2, dim=1)
-                
-                # Compute batch losses
-                # Create a dummy "same class" tensor with 1s for the cosine similarity
-                same_class = torch.ones(pred_horizon_embeddings.size(0)).to(device)
-                test_loss = self.cosine_loss(pred_horizon_embeddings, true_horizon_embeddings, same_class)
-
-                # Add batch losses to total loss
-                test_loss_total += test_loss.item()
-                test_correct += self.horizon_topk_acc(1)(pred_horizon_embeddings, true_horizon_indices)
-                test_topk_correct += self.horizon_topk_acc(self.topk)(pred_horizon_embeddings, true_horizon_indices)
+        avg_test_loss, avg_test_accuracy, avg_test_topk_accuracy = self._evaluate_model(test_loader, self.training_args.device, model)
         
         test_metrics = {
-            'test_cosine_loss': test_loss_total / len(test_loader),
-            'test_acc': test_correct / len(test_loader),
-            'test_topk_acc': test_topk_correct / len(test_loader)
+            'Test Cosine Loss': avg_test_loss,
+            'Test Accuracy': avg_test_accuracy,
+            'Test Top-5 Accuracy': avg_test_topk_accuracy
         }
         
-        logger.info(f"\nTotal Test Cosine Loss: {test_metrics['test_cosine_loss']:.4f}, Test Acc: {test_metrics['test_acc']:.4f}, Test Top-{self.topk} Acc: {test_metrics['test_topk_acc']:.4f}")
+        logger.info(f"Total Test Cosine Loss: {avg_test_loss:.4f}, Test Acc: {avg_test_accuracy:.4f}, Test Top-{self.topk} Acc: {avg_test_topk_accuracy:.4f}")
         
         return test_metrics
     
@@ -305,3 +218,83 @@ class SimpleHorizonClassificationExperiment(Experiment):
         plt.savefig(f'{model_output_dir}/losses_and_accuracies.png')
         if wandb_image_logging:
             wandb.log({"Losses and Accuracies": wandb.Image(figure)})
+            
+    def _train_model(self, train_loader, device, model, optimizer):
+        train_loss_total = 0.0
+        train_correct = 0
+        train_topk_correct = 0
+        train_loader_tqdm = tqdm(train_loader, desc="Training", leave=False)
+        for batch in train_loader_tqdm:
+            segments, geotemp_features, padded_true_horizon_indices = batch
+            segments, geotemp_features, padded_true_horizon_indices = segments.to(device), geotemp_features.to(device), padded_true_horizon_indices.to(device)
+
+            optimizer.zero_grad() # otherwise, PyTorch accumulates the gradients during backprop
+
+            # Predict depth markers (as padded tensors)
+            padded_pred_horizon_embeddings = model(segments=segments, geo_temp_features=geotemp_features[:, 1:]) # 'index' column not used in model
+                
+            true_horizon_embeddings = torch.stack([torch.tensor(self.dataprocessor.embeddings_dict['embedding'][lab.item()]) for lab in padded_true_horizon_indices.view(-1) if lab != -1]).to(device)
+            pred_horizon_embeddings = torch.stack([pred for pred, lab in zip(padded_pred_horizon_embeddings.view(-1, padded_pred_horizon_embeddings.size(-1)), padded_true_horizon_indices.view(-1)) if lab != -1]).to(device)
+            true_horizon_indices = padded_true_horizon_indices.view(-1)[padded_true_horizon_indices.view(-1) != -1]
+                
+            # Normalize embeddings for the cosine loss, true embeddings are already normalized
+            pred_horizon_embeddings = F.normalize(pred_horizon_embeddings, p=2, dim=1)
+                
+            # Compute individual losses, then sum them together for backprop
+            # Create a dummy "same class" tensor with 1s for the cosine similarity
+            same_class = torch.ones(pred_horizon_embeddings.size(0)).to(device)
+            train_loss = self.cosine_loss(pred_horizon_embeddings, true_horizon_embeddings, same_class)
+            train_loss.backward()
+            clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+
+            # Calculate batch losses to total loss
+            train_loss_total += train_loss.item()
+            train_correct += self.horizon_topk_acc(1)(pred_horizon_embeddings, true_horizon_indices)
+            train_topk_correct += self.horizon_topk_acc(self.topk)(pred_horizon_embeddings, true_horizon_indices)
+
+            train_loader_tqdm.set_postfix(loss=train_loss.item())
+
+        # Average losses over the batches
+        avg_train_loss = train_loss_total / len(train_loader)
+        avg_train_acc = train_correct / len(train_loader)
+        avg_train_topk_acc = train_topk_correct / len(train_loader)
+        
+        return avg_train_loss,avg_train_acc,avg_train_topk_acc
+
+    def _evaluate_model(self, eval_loader, device, model):
+        eval_loss_total = 0.0
+        eval_correct = 0
+        eval_topk_correct = 0
+        eval_loader_tqdm = tqdm(eval_loader, desc="Evaluating", leave=False)
+        with torch.no_grad():
+            for batch in eval_loader_tqdm:
+                segments, geotemp_features, padded_true_horizon_indices = batch
+                segments, geotemp_features, padded_true_horizon_indices = segments.to(device), geotemp_features.to(device), padded_true_horizon_indices.to(device)
+
+                # Predict depth markers (as padded tensors)
+                padded_pred_horizon_embeddings = model(segments=segments, geo_temp_features=geotemp_features[:, 1:]) # 'index' column not used in model
+                    
+                true_horizon_embeddings = torch.stack([torch.tensor(self.dataprocessor.embeddings_dict['embedding'][lab.item()]) for lab in padded_true_horizon_indices.view(-1) if lab != -1]).to(device)
+                pred_horizon_embeddings = torch.stack([pred for pred, lab in zip(padded_pred_horizon_embeddings.view(-1, padded_pred_horizon_embeddings.size(-1)), padded_true_horizon_indices.view(-1)) if lab != -1]).to(device)
+                true_horizon_indices = padded_true_horizon_indices.view(-1)[padded_true_horizon_indices.view(-1) != -1]
+                    
+                # Normalize embeddings for the cosine loss, true embeddings are already normalized
+                pred_horizon_embeddings = F.normalize(pred_horizon_embeddings, p=2, dim=1)
+                    
+                # Compute batch losses
+                # Create a dummy "same class" tensor with 1s for the cosine similarity
+                same_class = torch.ones(pred_horizon_embeddings.size(0)).to(device)
+                val_loss = self.cosine_loss(pred_horizon_embeddings, true_horizon_embeddings, same_class)
+
+                # Add batch losses to total loss
+                eval_loss_total += val_loss.item()
+                eval_correct += self.horizon_topk_acc(1)(pred_horizon_embeddings, true_horizon_indices)
+                eval_topk_correct += self.horizon_topk_acc(self.topk)(pred_horizon_embeddings, true_horizon_indices)
+            
+            # Average losses over the batches
+            avg_eval_loss = eval_loss_total / len(eval_loader)
+            avg_eval_acc = eval_correct / len(eval_loader)
+            avg_eval_topk_acc = eval_topk_correct / len(eval_loader)
+            
+        return avg_eval_loss,avg_eval_acc,avg_eval_topk_acc
