@@ -77,6 +77,7 @@ class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
         self.train_topk_acc_history, self.val_topk_acc_history = [], []
 
         for epoch in range(self.training_args.num_epochs):
+            print("--------------------------------")
             logger.info(f"Epoch {epoch + 1}/{self.training_args.num_epochs}")
             
             # Training loop
@@ -112,8 +113,6 @@ class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
             self.train_acc_history.append(avg_train_acc); self.val_acc_history.append(avg_val_acc)
             self.train_topk_acc_history.append(avg_train_topk_acc); self.val_topk_acc_history.append(avg_val_topk_acc)
 
-            print("--------------------------------")
-            logger.info(f"Epoch {epoch+1}")
             logger.info(f"Total Training Cosine Loss: {avg_train_loss:.4f}, Training Acc: {avg_train_acc:.4f}, Training Top-{self.topk} Acc: {avg_train_topk_acc:.4f}")
             logger.info(f"Total Validation Cosine Loss: {avg_val_loss:.4f}, Validation Acc: {avg_val_acc:.4f}, Validation Top-{self.topk} Acc: {avg_val_topk_acc:.4f}")
             logger.info(f"Current LR: {current_lr}")
@@ -124,6 +123,7 @@ class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
                 if early_stopping.should_stop:
                     logger.info("Early stopping activated.")
                     break
+        print("--------------------------------")
         
         self.trained = True
         return_metrics = {
@@ -164,6 +164,7 @@ class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
             'Test Top-5 Accuracy': avg_test_topk_accuracy
         }
         
+        print("--------------------------------")
         logger.info(f"Total Test Cosine Loss: {avg_test_loss:.4f}, Test Acc: {avg_test_accuracy:.4f}, Test Top-{self.topk} Acc: {avg_test_topk_accuracy:.4f}")
         print("--------------------------------")
         
