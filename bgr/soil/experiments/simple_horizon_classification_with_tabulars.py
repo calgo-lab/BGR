@@ -303,7 +303,8 @@ class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
             train_topk_correct += self.horizon_topk_acc(self.topk)(pred_horizon_embeddings, true_horizon_indices)
             
             # Append predictions and labels for F1 score
-            all_predictions.append(torch.max(pred_horizon_embeddings, dim=1).cpu())
+            _, batch_predictions = torch.max(pred_horizon_embeddings, dim=1)
+            all_predictions.append(batch_predictions.cpu())
             all_labels.append(true_horizon_indices.cpu())
 
             train_loader_tqdm.set_postfix(loss=train_loss.item())
@@ -351,7 +352,8 @@ class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
                 eval_topk_correct += self.horizon_topk_acc(self.topk)(pred_horizon_embeddings, true_horizon_indices)
                 
                 # Append predictions and labels for F1 score
-                all_predictions.append(torch.max(pred_horizon_embeddings, dim=1).cpu())
+                _, batch_predictions = torch.max(pred_horizon_embeddings, dim=1)
+                all_predictions.append(batch_predictions.cpu())
                 all_labels.append(true_horizon_indices.cpu())
             
             # Average losses over the batches
