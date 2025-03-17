@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 from bgr.soil.data.horizon_tabular_data import HorizonDataProcessor
 from bgr.soil.experiments import Experiment
 from bgr.soil.modelling.general_models import SimpleHorizonClassifier
-from bgr.soil.metrics import TopKHorizonAccuracy
+from bgr.soil.metrics import TopKHorizonAccuracy, f1_score
 from bgr.soil.data.datasets import SegmentsTabularDataset
 
 # Configure logging
@@ -74,6 +74,7 @@ class SimpleHorizonClassificationExperiment(Experiment):
         self.train_loss_history, self.val_loss_history = [], []
         self.train_acc_history, self.val_acc_history = [], []
         self.train_topk_acc_history, self.val_topk_acc_history = [], []
+        self.train_f1_score_history, self.val_f1_score_history = [], []
 
         for epoch in range(1, self.training_args.num_epochs + 1):
             print("--------------------------------")
@@ -81,11 +82,11 @@ class SimpleHorizonClassificationExperiment(Experiment):
             
             # Training loop
             model.train()
-            avg_train_loss, avg_train_acc, avg_train_topk_acc = self._train_model(train_loader, self.training_args.device, model, optimizer)
+            avg_train_loss, avg_train_acc, avg_train_topk_acc, avg_train_f1_score = self._train_model(train_loader, self.training_args.device, model, optimizer)
 
             # Evaluation loop
             model.eval() # Set model in evaluation mode before running inference
-            avg_val_loss, avg_val_acc, avg_val_topk_acc = self._evaluate_model(val_loader, self.training_args.device, model)
+            avg_val_loss, avg_val_acc, avg_val_topk_acc, avg_val_f1_score = self._evaluate_model(val_loader, self.training_args.device, model)
 
             epoch_metrics = {
                 'epoch' : epoch,
@@ -94,7 +95,9 @@ class SimpleHorizonClassificationExperiment(Experiment):
                 'train_acc': avg_train_acc,
                 'val_acc': avg_val_acc,
                 'train_topk_correct': avg_train_topk_acc,
-                'val_topk_acc': avg_val_topk_acc
+                'val_topk_acc': avg_val_topk_acc,
+                'train_f1_score': avg_train_f1_score,
+                'val_f1_score': avg_val_f1_score
             }
             for callback in self.training_args.callbacks:
                 callback(model, epoch_metrics, epoch)
@@ -111,9 +114,10 @@ class SimpleHorizonClassificationExperiment(Experiment):
             self.train_loss_history.append(avg_train_loss); self.val_loss_history.append(avg_val_loss)
             self.train_acc_history.append(avg_train_acc); self.val_acc_history.append(avg_val_acc)
             self.train_topk_acc_history.append(avg_train_topk_acc); self.val_topk_acc_history.append(avg_val_topk_acc)
+            self.train_f1_score_history.append(avg_train_f1_score); self.val_f1_score_history.append(avg_val_f1_score)
 
-            logger.info(f"Total Training Cosine Loss: {avg_train_loss:.4f}, Training Acc: {avg_train_acc:.4f}, Training Top-{self.topk} Acc: {avg_train_topk_acc:.4f}")
-            logger.info(f"Total Validation Cosine Loss: {avg_val_loss:.4f}, Validation Acc: {avg_val_acc:.4f}, Validation Top-{self.topk} Acc: {avg_val_topk_acc:.4f}")
+            logger.info(f"Total Training Cosine Loss: {avg_train_loss:.4f}, Training Acc: {avg_train_acc:.4f}, Training Top-{self.topk} Acc: {avg_train_topk_acc:.4f}, Training F1 Score: {avg_train_f1_score:.4f}")
+            logger.info(f"Total Validation Cosine Loss: {avg_val_loss:.4f}, Validation Acc: {avg_val_acc:.4f}, Validation Top-{self.topk} Acc: {avg_val_topk_acc:.4f}, Validation F1 Score: {avg_val_f1_score:.4f}")
             logger.info(f"Current LR: {current_lr}")
             
             # Check early stopping
@@ -131,7 +135,9 @@ class SimpleHorizonClassificationExperiment(Experiment):
             'Train Accuracy' : self.train_acc_history[-1],
             'Validation Accuracy' : self.val_acc_history[-1],
             'Train Top-5 Accuracy' : self.train_topk_acc_history[-1],
-            'Validation Top-5 Accuracy' : self.val_topk_acc_history[-1]
+            'Validation Top-5 Accuracy' : self.val_topk_acc_history[-1],
+            'Train F1 Score' : self.train_f1_score_history[-1],
+            'Validation F1 Score' : self.val_f1_score_history[-1]
         }
         
         return model, return_metrics
@@ -152,18 +158,19 @@ class SimpleHorizonClassificationExperiment(Experiment):
         
         model.to(self.training_args.device)
         
+        print("--------------------------------")
         # Evaluation loop
         model.eval() # Set model in evaluation mode before running inference
-        avg_test_loss, avg_test_accuracy, avg_test_topk_accuracy = self._evaluate_model(test_loader, self.training_args.device, model)
+        avg_test_loss, avg_test_accuracy, avg_test_topk_accuracy, avg_test_f1_score = self._evaluate_model(test_loader, self.training_args.device, model)
         
         test_metrics = {
             'Test Cosine Loss': avg_test_loss,
             'Test Accuracy': avg_test_accuracy,
-            'Test Top-5 Accuracy': avg_test_topk_accuracy
+            'Test Top-5 Accuracy': avg_test_topk_accuracy,
+            'Test F1 Score': avg_test_f1_score
         }
         
-        print("--------------------------------")
-        logger.info(f"Total Test Cosine Loss: {avg_test_loss:.4f}, Test Acc: {avg_test_accuracy:.4f}, Test Top-{self.topk} Acc: {avg_test_topk_accuracy:.4f}")
+        logger.info(f"Total Test Cosine Loss: {avg_test_loss:.4f}, Test Acc: {avg_test_accuracy:.4f}, Test Top-{self.topk} Acc: {avg_test_topk_accuracy:.4f}, Test F1 Score: {avg_test_f1_score:.4f}")
         print("--------------------------------")
         
         return test_metrics
@@ -188,6 +195,9 @@ class SimpleHorizonClassificationExperiment(Experiment):
         }
         topk_acc_histories = {
             f'Top-{self.topk} Accuracy': (self.train_topk_acc_history, self.val_topk_acc_history)
+        }
+        f1_score_histories = {
+            'F1 Score': (self.train_f1_score_history, self.val_f1_score_history)
         }
         
         figure = plt.figure(figsize=(15, 7))
@@ -220,6 +230,16 @@ class SimpleHorizonClassificationExperiment(Experiment):
             plt.ylabel('Accuracy')
             plt.legend()
             plt.grid()
+            
+        for i, (title, (train_history, val_history)) in enumerate(f1_score_histories.items()):
+            plt.subplot(2, 2, i + 4)
+            plt.plot(range(1, complete_epochs), train_history, label=f'Train {title}', marker='o', color='b')
+            plt.plot(range(1, complete_epochs), val_history, label=f'Validation {title}', marker='o', color='r')
+            plt.title(f'{title}')
+            plt.xlabel('Epoch')
+            plt.ylabel('F1 Score')
+            plt.legend()
+            plt.grid()
         
         plt.tight_layout()
         
@@ -231,6 +251,7 @@ class SimpleHorizonClassificationExperiment(Experiment):
         train_loss_total = 0.0
         train_correct = 0
         train_topk_correct = 0
+        train_f1_scores = 0
         train_loader_tqdm = tqdm(train_loader, desc="Training", leave=False)
         for batch in train_loader_tqdm:
             segments, geotemp_features, padded_true_horizon_indices = batch
@@ -260,6 +281,7 @@ class SimpleHorizonClassificationExperiment(Experiment):
             train_loss_total += train_loss.item()
             train_correct += self.horizon_topk_acc(1)(pred_horizon_embeddings, true_horizon_indices)
             train_topk_correct += self.horizon_topk_acc(self.topk)(pred_horizon_embeddings, true_horizon_indices)
+            train_f1_scores += f1_score(pred_horizon_embeddings, true_horizon_indices)
 
             train_loader_tqdm.set_postfix(loss=train_loss.item())
 
@@ -267,13 +289,15 @@ class SimpleHorizonClassificationExperiment(Experiment):
         avg_train_loss = train_loss_total / len(train_loader)
         avg_train_acc = train_correct / len(train_loader)
         avg_train_topk_acc = train_topk_correct / len(train_loader)
+        avg_train_f1 = train_f1_scores / len(train_loader)
         
-        return avg_train_loss,avg_train_acc,avg_train_topk_acc
+        return avg_train_loss,avg_train_acc,avg_train_topk_acc,avg_train_f1
 
     def _evaluate_model(self, eval_loader, device, model):
         eval_loss_total = 0.0
         eval_correct = 0
         eval_topk_correct = 0
+        eval_f1_scores = 0
         eval_loader_tqdm = tqdm(eval_loader, desc="Evaluating", leave=False)
         with torch.no_grad():
             for batch in eval_loader_tqdm:
@@ -299,13 +323,15 @@ class SimpleHorizonClassificationExperiment(Experiment):
                 eval_loss_total += val_loss.item()
                 eval_correct += self.horizon_topk_acc(1)(pred_horizon_embeddings, true_horizon_indices)
                 eval_topk_correct += self.horizon_topk_acc(self.topk)(pred_horizon_embeddings, true_horizon_indices)
+                eval_f1_scores += f1_score(pred_horizon_embeddings, true_horizon_indices)
             
             # Average losses over the batches
             avg_eval_loss = eval_loss_total / len(eval_loader)
             avg_eval_acc = eval_correct / len(eval_loader)
             avg_eval_topk_acc = eval_topk_correct / len(eval_loader)
+            avg_eval_f1 = eval_f1_scores / len(eval_loader)
             
-        return avg_eval_loss,avg_eval_acc,avg_eval_topk_acc
+        return avg_eval_loss,avg_eval_acc,avg_eval_topk_acc,avg_eval_f1
     
     @staticmethod
     def get_experiment_hyperparameters():
