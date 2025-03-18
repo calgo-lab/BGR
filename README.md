@@ -10,7 +10,7 @@ options:
 - tabulars
 - MLP
 
-- [ ] Segments + No Embeddings (Cross Entropy)
+- [x] Segments + No Embeddings (Cross Entropy)
 
 - [ ] Segments + Embeddings (Cosine Loss)
 
