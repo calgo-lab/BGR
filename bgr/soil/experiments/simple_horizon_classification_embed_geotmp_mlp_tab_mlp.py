@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 from bgr.soil.data.horizon_tabular_data import HorizonDataProcessor
 from bgr.soil.experiments import Experiment
-from bgr.soil.modelling.general_models import SimpleHorizonClassifierWithTabulars
+from bgr.soil.modelling.general_models import SimpleHorizonClassifierWithEmbeddingsGeotempsMLPTabMLP
 from bgr.soil.metrics import TopKHorizonAccuracy
 from bgr.soil.data.datasets import SegmentsTabularDataset
 
@@ -199,7 +199,7 @@ class SimpleHorizonClassificationWithEmbeddingsGeotempsMLPTabMLP(Experiment):
         return test_metrics
     
     def get_model(self) -> nn.Module:
-        return SimpleHorizonClassifierWithTabulars(
+        return SimpleHorizonClassifierWithEmbeddingsGeotempsMLPTabMLP(
             geo_temp_input_dim=len(self.dataprocessor.geotemp_img_infos) - 2, # without index and img path
             segments_tabular_input_dim=len(self.segments_tabular_feature_columns) + sum(self.segments_tabular_categ_feature_columns.values()),
             segments_output_dim=self.segments_output_dim,

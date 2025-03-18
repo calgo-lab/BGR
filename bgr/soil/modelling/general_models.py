@@ -150,14 +150,14 @@ class HorizonClassifier(nn.Module):
         # -every horizon_embedding: (total_horizons_in_batch, embedding_dim)
         return depth_markers, tabular_predictions, horizon_embedding
 
-class SimpleHorizonClassifier(nn.Module):
+class SimpleHorizonClassifierWithEmbeddingsGeotempsMLP(nn.Module):
     def __init__(
         self,
         geo_temp_input_dim,
         geo_temp_output_dim=32,
         embedding_dim=61
     ):
-        super(SimpleHorizonClassifier, self).__init__()
+        super(SimpleHorizonClassifierWithEmbeddingsGeotempsMLP, self).__init__()
         
         self.segment_encoder = PatchCNNEncoder(patch_size=512, patch_stride=512)
         self.geo_temp_encoder = GeoTemporalEncoder(geo_temp_input_dim, geo_temp_output_dim)
@@ -195,7 +195,7 @@ class SimpleHorizonClassifier(nn.Module):
         
         return horizon_embeddings
 
-class SimpleHorizonClassifierWithTabulars(nn.Module):
+class SimpleHorizonClassifierWithEmbeddingsGeotempsMLPTabMLP(nn.Module):
     def __init__(
         self,
         geo_temp_input_dim,
@@ -205,7 +205,7 @@ class SimpleHorizonClassifierWithTabulars(nn.Module):
         geo_temp_output_dim=64,
         embedding_dim=61
     ):
-        super(SimpleHorizonClassifierWithTabulars, self).__init__()
+        super(SimpleHorizonClassifierWithEmbeddingsGeotempsMLPTabMLP, self).__init__()
         
         self.segment_encoder = PatchCNNEncoder(patch_size=512, patch_stride=512, output_dim=segments_output_dim)
         self.geo_temp_encoder = GeoTemporalEncoder(geo_temp_input_dim, geo_temp_output_dim)
