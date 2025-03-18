@@ -150,6 +150,34 @@ class HorizonClassifier(nn.Module):
         # -every horizon_embedding: (total_horizons_in_batch, embedding_dim)
         return depth_markers, tabular_predictions, horizon_embedding
 
+class SimpleHorizonClassifier(nn.Module):
+    def __init__(
+        self,
+        segment_encoder_output_dim=512,
+        patch_size=512,
+        num_classes=87
+    ):
+        super(SimpleHorizonClassifier, self).__init__()
+        
+        self.segment_encoder = PatchCNNEncoder(patch_size=patch_size, patch_stride=patch_size, output_dim=segment_encoder_output_dim)
+        self.classifier = nn.Linear(segment_encoder_output_dim, num_classes)
+        
+    def forward(self, segments):
+        batch_size, num_segments, C, H, W = segments.shape
+        
+        # Encode each segment individually
+        segment_features_list = []
+        for i in range(num_segments):
+            segment = segments[:, i, :, :, :]
+            segment_features = self.segment_encoder(segment)
+            segment_features_list.append(segment_features)
+        segment_features = torch.stack(segment_features_list, dim=1)
+        
+        # Classify each segment
+        segment_logits = self.classifier(segment_features)
+        
+        return segment_logits
+
 class SimpleHorizonClassifierWithEmbeddingsGeotempsMLP(nn.Module):
     def __init__(
         self,
