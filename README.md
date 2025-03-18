@@ -14,7 +14,7 @@ options:
 
 - [ ] Segments + Embeddings (Cosine Loss)
 
-- [ ] Segments + Embeddings (Cosine Loss) + Geotemps
+- [x] Segments + Embeddings (Cosine Loss) + Geotemps
 
 - [x] Segments + Embeddings (Cosine Loss) + Geotemps + MLP
 
