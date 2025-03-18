@@ -257,11 +257,13 @@ class SimpleHorizonClassifierWithEmbeddingsGeotempsMLP(nn.Module):
         self,
         geo_temp_input_dim,
         geo_temp_output_dim=32,
+        patch_size=512,
+        segment_encoder_output_dim=512,
         embedding_dim=61
     ):
         super(SimpleHorizonClassifierWithEmbeddingsGeotempsMLP, self).__init__()
         
-        self.segment_encoder = PatchCNNEncoder(patch_size=512, patch_stride=512)
+        self.segment_encoder = PatchCNNEncoder(patch_size=patch_size, patch_stride=patch_size, output_dim=segment_encoder_output_dim)
         self.geo_temp_encoder = GeoTemporalEncoder(geo_temp_input_dim, geo_temp_output_dim)
         
         self.horizon_embedder = HorizonEmbedder(input_dim=self.segment_encoder.num_img_features + geo_temp_output_dim, output_dim=embedding_dim)
@@ -302,14 +304,15 @@ class SimpleHorizonClassifierWithEmbeddingsGeotempsMLPTabMLP(nn.Module):
         self,
         geo_temp_input_dim,
         segments_tabular_input_dim,
-        segments_output_dim=512,
+        segment_encoder_output_dim=512,
         segments_tabular_output_dim=64,
         geo_temp_output_dim=64,
+        patch_size=512,
         embedding_dim=61
     ):
         super(SimpleHorizonClassifierWithEmbeddingsGeotempsMLPTabMLP, self).__init__()
         
-        self.segment_encoder = PatchCNNEncoder(patch_size=512, patch_stride=512, output_dim=segments_output_dim)
+        self.segment_encoder = PatchCNNEncoder(patch_size=patch_size, patch_stride=patch_size, output_dim=segment_encoder_output_dim)
         self.geo_temp_encoder = GeoTemporalEncoder(geo_temp_input_dim, geo_temp_output_dim)
         
         # Simple tabular encoder for the segment-specific tabular features

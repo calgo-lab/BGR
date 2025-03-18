@@ -43,6 +43,10 @@ class SimpleHorizonClassificationEmbeddingsGeotempMLP(Experiment):
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]), # Normalize with ImageNet statistics
         ])
+        
+        # Retrieve the experiment hyperparameters
+        self.hyperparameters = SimpleHorizonClassificationEmbeddingsGeotempMLP.get_experiment_hyperparameters()
+        self.hyperparameters.update(training_args.hyperparameters)
     
     def train_and_validate(self,
         train_df: pd.DataFrame,
@@ -181,7 +185,9 @@ class SimpleHorizonClassificationEmbeddingsGeotempMLP(Experiment):
     def get_model(self) -> nn.Module:
         return SimpleHorizonClassifierWithEmbeddingsGeotempsMLP(
             geo_temp_input_dim=len(self.dataprocessor.geotemp_img_infos) - 2, # without index and img path
-            geo_temp_output_dim=256,
+            geo_temp_output_dim=self.hyperparameters['geo_temp_output_dim'],
+            patch_size=self.hyperparameters['patch_size'],
+            segment_encoder_output_dim=self.hyperparameters['segment_encoder_output_dim'],
             embedding_dim=np.shape(self.dataprocessor.embeddings_dict['embedding'])[1]
         )
     
@@ -352,4 +358,8 @@ class SimpleHorizonClassificationEmbeddingsGeotempMLP(Experiment):
     
     @staticmethod
     def get_experiment_hyperparameters():
-        return {}
+        return {
+            'geo_temp_output_dim' : 256,
+            'segment_encoder_output_dim' : 512,
+            'patch_size' : 512
+        }
