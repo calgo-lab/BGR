@@ -36,7 +36,12 @@ class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
         self.trained = False
         
         # Without Bodenart und Bodenfarbe
-        self.segments_tabular_feature_columns = ['Steine', 'Karbonat', 'Humusgehaltsklasse', 'Durchwurzelung']
+        self.segments_tabular_feature_columns = ['Steine']
+        self.segments_tabular_categ_feature_columns = {
+            'Karbonat' : 8,
+            'Humusgehaltsklasse' : 8,
+            'Durchwurzelung' : 7
+        }
         
         self.label_embeddings_tensor = torch.tensor(self.dataprocessor.embeddings_dict['embedding'], device=self.training_args.device).float()
         self.cosine_loss = nn.CosineEmbeddingLoss()
@@ -64,7 +69,8 @@ class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
             normalize=self.image_normalization,
             label_column=self.target,
             feature_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
-            segments_tab_feature_columns=self.segments_tabular_feature_columns
+            segments_tab_feature_columns=self.segments_tabular_feature_columns,
+            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns
         )
         train_loader = DataLoader(train_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
@@ -73,7 +79,8 @@ class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
             normalize=self.image_normalization,
             label_column=self.target,
             feature_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
-            segments_tab_feature_columns=self.segments_tabular_feature_columns
+            segments_tab_feature_columns=self.segments_tabular_feature_columns,
+            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns
         )
         val_loader = DataLoader(val_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
@@ -167,7 +174,8 @@ class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
             normalize=self.image_normalization,
             label_column=self.target,
             feature_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
-            segments_tab_feature_columns=self.segments_tabular_feature_columns
+            segments_tab_feature_columns=self.segments_tabular_feature_columns,
+            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns
         )
         test_loader = DataLoader(test_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         

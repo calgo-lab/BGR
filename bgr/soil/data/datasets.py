@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from torchvision import transforms
 from torch.utils.data import Dataset
@@ -87,12 +88,13 @@ class SegmentsTabularDataset(Dataset):
         dataframe,
         segment_size=(512, 1024),
         normalize=None,
-        path_column='file',
-        depth_column='Untergrenze',
-        label_column='Horizontsymbol_relevant', # TODO: Maybe this doesnt work?
-        max_segments=8,
-        feature_columns=None,
-        segments_tab_feature_columns=None
+        path_column : str ='file',
+        depth_column : str ='Untergrenze',
+        label_column : str ='Horizontsymbol_relevant', # TODO: Maybe this doesnt work?
+        max_segments : int =8,
+        feature_columns : list =None,
+        segments_tab_feature_columns : list = None,
+        segments_tab_categ_feature_columns : dict =None
     ):
         """
         Initializes the SegmentsTabularDataset.
@@ -107,6 +109,7 @@ class SegmentsTabularDataset(Dataset):
             max_segments (int): Maximum number of segments per image.
             feature_columns (list, optional): List of column names for tabular features. Defaults to None.
             segments_tab_feature_columns (list, optional): List of column names for segment-specific tabular features. Defaults to None.
+            segments_tab_categ_feature_columns (dict, optional): Dictionary of column names for segment-specific categorical features, with the number of categories as values. Defaults to None.
         """
         self.dataframe = dataframe
         self.segment_size = segment_size
@@ -117,6 +120,7 @@ class SegmentsTabularDataset(Dataset):
         self.max_segments = max_segments
         self.feature_columns = feature_columns
         self.segments_tabular_features = segments_tab_feature_columns
+        self.segments_tab_categ_features = segments_tab_categ_feature_columns
         
         if self.normalize is None:
             self.normalize = transforms.Compose([
@@ -169,6 +173,20 @@ class SegmentsTabularDataset(Dataset):
                 segment_tabular_features_array = [row[feature][i] for feature in self.segments_tabular_features]
                 segment_tabular_features = torch.tensor(segment_tabular_features_array, dtype=torch.float32)
                 segments_specific_tabular_features.append(segment_tabular_features)
+                
+            # One hot encode categorical features
+            if self.segments_tab_categ_features:
+                segment_tabular_features_array = [row[feature][i] for feature in self.segments_tab_categ_features.keys()]
+                
+                # [2, 3, 5] -> [0, 0, 1, ... , 0, 0, 0, 1, ... , 0, 0, 0, 0, 0, 1, ...]
+                onehot_encoded_tabular_feature_array = np.zeros(sum(self.segments_tab_categ_features.values()))
+                cum_sum = 0
+                for idx, value in enumerate(segment_tabular_features_array):
+                    onehot_encoded_tabular_feature_array[cum_sum + value] = 1
+                    cum_sum += self.segments_tab_categ_features.values()[idx]
+                
+                segment_onehot_tabular_features = torch.tensor(onehot_encoded_tabular_feature_array, dtype=torch.long)
+                segments_specific_tabular_features[i].cat(segment_onehot_tabular_features)
             
             # Extract the depth and label
             label = torch.tensor(row[self.label_column][i], dtype=torch.long)
