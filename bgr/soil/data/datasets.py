@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from torchvision import transforms
 from torch.utils.data import Dataset
@@ -68,17 +69,48 @@ class ImageTabularDataset(Dataset):
             return image, tabular_features
 
 class SegmentsTabularDataset(Dataset):
+    """
+    Custom Dataset class for handling image segments and tabular data.
+
+    Attributes:
+        dataframe (pd.DataFrame): DataFrame containing image paths, depth markers, and labels.
+        segment_size (tuple): Size to which each image segment will be resized.
+        normalize (callable): Transformation to normalize images.
+        path_column (str): Column name for image paths in the DataFrame.
+        depth_column (str): Column name for depth markers in the DataFrame.
+        label_column (str): Column name for labels in the DataFrame.
+        max_segments (int): Maximum number of segments per image.
+        feature_columns (list): List of column names for tabular features.
+        segments_tab_feature_columns (list): List of tabular features for each segment.
+    """
     def __init__(
         self,
         dataframe,
         segment_size=(512, 1024),
         normalize=None,
-        path_column='file',
-        depth_column='Untergrenze',
-        label_column='Horizontsymbol_relevant', # TODO: Maybe this doesnt work?
-        max_segments=8,
-        feature_columns=None
+        path_column : str ='file',
+        depth_column : str ='Untergrenze',
+        label_column : str ='Horizontsymbol_relevant', # TODO: Maybe this doesnt work?
+        max_segments : int =8,
+        feature_columns : list =None,
+        segments_tab_num_feature_columns : list = None,
+        segments_tab_categ_feature_columns : dict =None
     ):
+        """
+        Initializes the SegmentsTabularDataset.
+
+        Args:
+            dataframe (pd.DataFrame): DataFrame containing image paths, depth markers, and labels.
+            segment_size (tuple): Size to which each image segment will be resized.
+            normalize (callable, optional): Transformation to normalize images. Defaults to None.
+            path_column (str): Column name for image paths in the DataFrame.
+            depth_column (str): Column name for depth markers in the DataFrame.
+            label_column (str): Column name for labels in the DataFrame.
+            max_segments (int): Maximum number of segments per image.
+            feature_columns (list, optional): List of column names for tabular features. Defaults to None.
+            segments_tab_num_feature_columns (list, optional): List of column names for segment-specific tabular features. Defaults to None.
+            segments_tab_categ_feature_columns (dict, optional): Dictionary of column names for segment-specific categorical features, with the number of categories as values. Defaults to None.
+        """
         self.dataframe = dataframe
         self.segment_size = segment_size
         self.normalize = normalize
@@ -87,6 +119,8 @@ class SegmentsTabularDataset(Dataset):
         self.label_column = label_column
         self.max_segments = max_segments
         self.feature_columns = feature_columns
+        self.segments_tabular_num_features = segments_tab_num_feature_columns
+        self.segments_tab_categ_features = segments_tab_categ_feature_columns
         
         if self.normalize is None:
             self.normalize = transforms.Compose([
@@ -94,9 +128,24 @@ class SegmentsTabularDataset(Dataset):
             ])
         
     def __len__(self):
+        """
+        Returns the length of the dataset.
+
+        Returns:
+            int: Number of rows in the DataFrame.
+        """
         return len(self.dataframe)
 
     def __getitem__(self, index):
+        """
+        Retrieves an item from the dataset.
+
+        Args:
+            index (int): Index of the item to retrieve.
+
+        Returns:
+            tuple: A tuple containing segments, tabular features (if available), and labels.
+        """
         row = self.dataframe.iloc[index]
         
         # Extract the image path from the DataFrame, read and resize image
@@ -109,6 +158,7 @@ class SegmentsTabularDataset(Dataset):
         # Crop to segments
         segments = []
         labels = []
+        segments_specific_tabular_features = []
         for i in range(len(pixel_depths) - 1):
             upper, lower = pixel_depths[i], pixel_depths[i + 1]
             
@@ -117,18 +167,47 @@ class SegmentsTabularDataset(Dataset):
             segment = segment.resize(self.segment_size)
             segment = self.normalize(segment)
             segments.append(segment)
-        
+            
+            # Extract segment-specific tabular features
+            if self.segments_tabular_num_features:
+                segment_tabular_features_array = [row[feature][i] for feature in self.segments_tabular_num_features]
+                segment_tabular_features = torch.tensor(segment_tabular_features_array, dtype=torch.float32)
+                segments_specific_tabular_features.append(segment_tabular_features)
+                
+            # One hot encode categorical features
+            if self.segments_tab_categ_features:
+                segment_tabular_features_array = [row[feature][i] for feature in self.segments_tab_categ_features.keys()]
+                
+                # [2, 3, 5] -> [0, 0, 1, ... , 0, 0, 0, 1, ... , 0, 0, 0, 0, 0, 1, ...]
+                onehot_encoded_tabular_feature_array = np.zeros(sum(self.segments_tab_categ_features.values()))
+                cum_sum = 0
+                for idx, value in enumerate(segment_tabular_features_array):
+                    onehot_encoded_tabular_feature_array[cum_sum + value] = 1
+                    cum_sum += list(self.segments_tab_categ_features.values())[idx]
+                
+                segment_onehot_tabular_features = torch.tensor(onehot_encoded_tabular_feature_array, dtype=torch.long)
+                segments_specific_tabular_features[i] = torch.cat([segments_specific_tabular_features[i], segment_onehot_tabular_features], dim=0)
+            
             # Extract the depth and label
             label = torch.tensor(row[self.label_column][i], dtype=torch.long)
             labels.append(label)
         
-        # Pad segments and labels to ensure consistent sizes
+        # Pad segments, segments tabular and labels to ensure consistent sizes
         while len(segments) < self.max_segments:
+            # Pad segments images with zeros
             segments.append(torch.zeros_like(segments[0]))
+            
+            # Pad segments tabular features with zeros
+            if self.segments_tabular_num_features:
+                segments_specific_tabular_features.append(torch.zeros_like(segments_specific_tabular_features[0]))
+            
+            # Pad labels with -1
             labels.append(torch.tensor(-1, dtype=torch.long))  # Use -1 as a padding label
 
-        # Convert segments and labels to tensors
+        # Convert segments, segments tabular features and labels to tensors
         segments = torch.stack(segments)
+        if self.segments_tabular_num_features:
+            segments_specific_tabular_features = torch.stack(segments_specific_tabular_features)
         labels = torch.tensor(labels, dtype=torch.long)
 
         if self.feature_columns:
@@ -136,6 +215,12 @@ class SegmentsTabularDataset(Dataset):
             tabular_features_array = row[self.feature_columns].astype(float).values
             tabular_features = torch.tensor(tabular_features_array, dtype=torch.float32)
         
-            return segments, tabular_features, labels
+            if self.segments_tabular_num_features:
+                return segments, segments_specific_tabular_features, tabular_features, labels
+            else:
+                return segments, tabular_features, labels
         else:
-            return segments, labels
+            if self.segments_tabular_num_features:
+                return segments, segments_specific_tabular_features, labels
+            else:
+                return segments, labels

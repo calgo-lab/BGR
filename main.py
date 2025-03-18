@@ -44,7 +44,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument('--data_folder_path', type=str, default='../data/BGR/')
     parser.add_argument('--target', type=str, default='Horizontsymbol_relevant') #TODO: Do we need multiple targets?
     parser.add_argument('--train_val_test_frac', type=lambda arg: parse_list(arg, length=3, dtype=float),
-        default=[0.7, 0.15, 0.15])
+        default=[0.6, 0.2, 0.2])
     parser.add_argument('--label_embedding_path', type=str, default='./BGR/label_embeddings/all_horizons_embeddings.pickle')
 
     # dir-related parameters
@@ -149,6 +149,7 @@ def main(args : argparse.Namespace):
     
     if args.inference_model_file:
         # Run inference on the test data using a pre-trained model
+        # TODO: Will probably not work because of hyperparameters
         test_metrics = experimenter.run_inference(training_args, args.inference_model_file, timestamp, wandb_offline=args.wandb_offline)
     else:
         # Train, validate and test the model according to the model arguments
@@ -177,8 +178,7 @@ def read_and_handle_args():
     # Parse unknown args and add them to the args namespace
     unknown_dict = parse_unknown_args(unknown)
     for key, value in unknown_dict.items():
-        #setattr(args, key, value) # TODO: Uncomment this line if we want unknown arguments
-        raise ValueError(f'Unknown argument: {key}={value}')
+        setattr(args, key, value)
     
     return args
 

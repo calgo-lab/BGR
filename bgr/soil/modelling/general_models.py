@@ -195,6 +195,64 @@ class SimpleHorizonClassifier(nn.Module):
         
         return horizon_embeddings
 
+class SimpleHorizonClassifierWithTabulars(nn.Module):
+    def __init__(
+        self,
+        geo_temp_input_dim,
+        segments_tabular_input_dim,
+        segments_output_dim=512,
+        segments_tabular_output_dim=64,
+        geo_temp_output_dim=64,
+        embedding_dim=61
+    ):
+        super(SimpleHorizonClassifierWithTabulars, self).__init__()
+        
+        self.segment_encoder = PatchCNNEncoder(patch_size=512, patch_stride=512, output_dim=segments_output_dim)
+        self.geo_temp_encoder = GeoTemporalEncoder(geo_temp_input_dim, geo_temp_output_dim)
+        
+        # Simple tabular encoder for the segment-specific tabular features
+        self.segments_tabular_encoder = nn.Sequential(
+            nn.Linear(segments_tabular_input_dim, segments_tabular_output_dim),
+            nn.ReLU()
+        )
+        
+        self.horizon_embedder = HorizonEmbedder(input_dim=self.segment_encoder.num_img_features + geo_temp_output_dim + segments_tabular_output_dim, output_dim=embedding_dim)
+        
+    def forward(self, segments, segments_tabular_features, geo_temp_features):
+        batch_size, num_segments, C, H, W = segments.shape
+        
+        # Encode each segment individually
+        segment_features_list = []
+        for i in range(num_segments):
+            segment = segments[:, i, :, :, :]
+            segment_features = self.segment_encoder(segment)
+            segment_features_list.append(segment_features)
+        segment_features = torch.stack(segment_features_list, dim=1)
+        
+        segments_tabular_features = self.segments_tabular_encoder(segments_tabular_features)
+        
+        # Concatenate segment features with segment-specific tabular features
+        segment_features = torch.cat([segment_features, segments_tabular_features], dim=-1)
+        
+        geo_temp_features = self.geo_temp_encoder(geo_temp_features)
+        
+        # Replicate geo_temp_features for each segment
+        geo_temp_features = geo_temp_features.unsqueeze(1).repeat(1, num_segments, 1)
+        
+        # Flatten the segment features and geo_temp_features to match the expected input dimensions
+        segment_features = segment_features.view(batch_size * num_segments, -1)
+        geo_temp_features = geo_temp_features.view(batch_size * num_segments, -1)
+        
+        # Concatenate segment features with geotemporal features
+        combined_features = torch.cat([segment_features, geo_temp_features], dim=-1)
+        
+        # Compute the horizon embeddings
+        horizon_embeddings = self.horizon_embedder(combined_features)
+        
+        # Reshape the horizon embeddings back to the original batch and segment dimensions
+        horizon_embeddings = horizon_embeddings.view(batch_size, num_segments, -1)
+        
+        return horizon_embeddings
 class ImageTabularModel(nn.Module):
     """
     Simple baseline model that combines ViT image features with tabular features

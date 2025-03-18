@@ -19,20 +19,29 @@ if TYPE_CHECKING:
 
 from bgr.soil.data.horizon_tabular_data import HorizonDataProcessor
 from bgr.soil.experiments import Experiment
-from bgr.soil.modelling.general_models import SimpleHorizonClassifier
+from bgr.soil.modelling.general_models import SimpleHorizonClassifierWithTabulars
 from bgr.soil.metrics import TopKHorizonAccuracy
 from bgr.soil.data.datasets import SegmentsTabularDataset
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class SimpleHorizonClassificationExperiment(Experiment):
+class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
     def __init__(self, training_args: 'TrainingArgs', target: str, dataprocessor: HorizonDataProcessor):
         self.training_args = training_args
         self.target = target
         self.dataprocessor = dataprocessor
         self.trained = False
+        
+        # Without Bodenart und Bodenfarbe
+        self.segments_tabular_feature_columns = ['Steine']
+        self.segments_tabular_categ_feature_columns = {
+            'Karbonat' : 8,
+            'Humusgehaltsklasse' : 8,
+            'Durchwurzelung' : 7
+        }
         
         self.label_embeddings_tensor = torch.tensor(self.dataprocessor.embeddings_dict['embedding'], device=self.training_args.device).float()
         self.cosine_loss = nn.CosineEmbeddingLoss()
@@ -43,6 +52,11 @@ class SimpleHorizonClassificationExperiment(Experiment):
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]), # Normalize with ImageNet statistics
         ])
+        
+        # Retrieve the experiment hyperparameters
+        defaults = SimpleHorizonClassificationWithTabularsExperiment.get_experiment_hyperparameters()
+        for key in defaults:
+            setattr(self, key, self.training_args.hyperparameters.get(key, defaults[key]))
     
     def train_and_validate(self,
         train_df: pd.DataFrame,
@@ -54,7 +68,9 @@ class SimpleHorizonClassificationExperiment(Experiment):
             dataframe=train_df,
             normalize=self.image_normalization,
             label_column=self.target,
-            feature_columns=self.dataprocessor.geotemp_img_infos[:-1] # without 'file'
+            feature_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
+            segments_tab_num_feature_columns=self.segments_tabular_feature_columns,
+            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns
         )
         train_loader = DataLoader(train_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
@@ -62,7 +78,9 @@ class SimpleHorizonClassificationExperiment(Experiment):
             dataframe=val_df,
             normalize=self.image_normalization,
             label_column=self.target,
-            feature_columns=self.dataprocessor.geotemp_img_infos[:-1] # without 'file'
+            feature_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
+            segments_tab_num_feature_columns=self.segments_tabular_feature_columns,
+            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns
         )
         val_loader = DataLoader(val_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
@@ -155,7 +173,9 @@ class SimpleHorizonClassificationExperiment(Experiment):
             dataframe=test_df,
             normalize=self.image_normalization,
             label_column=self.target,
-            feature_columns=self.dataprocessor.geotemp_img_infos[:-1] # without 'file'
+            feature_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
+            segments_tab_num_feature_columns=self.segments_tabular_feature_columns,
+            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns
         )
         test_loader = DataLoader(test_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
@@ -179,9 +199,12 @@ class SimpleHorizonClassificationExperiment(Experiment):
         return test_metrics
     
     def get_model(self) -> nn.Module:
-        return SimpleHorizonClassifier(
+        return SimpleHorizonClassifierWithTabulars(
             geo_temp_input_dim=len(self.dataprocessor.geotemp_img_infos) - 2, # without index and img path
-            geo_temp_output_dim=256,
+            segments_tabular_input_dim=len(self.segments_tabular_feature_columns) + sum(self.segments_tabular_categ_feature_columns.values()),
+            segments_output_dim=self.segments_output_dim,
+            segments_tabular_output_dim=self.segments_tabular_output_dim,
+            geo_temp_output_dim=self.geo_temp_output_dim,
             embedding_dim=np.shape(self.dataprocessor.embeddings_dict['embedding'])[1]
         )
     
@@ -260,13 +283,13 @@ class SimpleHorizonClassificationExperiment(Experiment):
         
         train_loader_tqdm = tqdm(train_loader, desc="Training", leave=False)
         for batch in train_loader_tqdm:
-            segments, geotemp_features, padded_true_horizon_indices = batch
-            segments, geotemp_features, padded_true_horizon_indices = segments.to(device), geotemp_features.to(device), padded_true_horizon_indices.to(device)
+            segments, segments_tabular_features, geotemp_features, padded_true_horizon_indices = batch
+            segments, segments_tabular_features, geotemp_features, padded_true_horizon_indices = segments.to(device), segments_tabular_features.to(device), geotemp_features.to(device), padded_true_horizon_indices.to(device)
 
             optimizer.zero_grad() # otherwise, PyTorch accumulates the gradients during backprop
 
             # Predict depth markers (as padded tensors)
-            padded_pred_horizon_embeddings = model(segments=segments, geo_temp_features=geotemp_features[:, 1:]) # 'index' column not used in model
+            padded_pred_horizon_embeddings = model(segments=segments, segments_tabular_features=segments_tabular_features, geo_temp_features=geotemp_features[:, 1:]) # 'index' column not used in model
                 
             true_horizon_embeddings = torch.stack([torch.tensor(self.dataprocessor.embeddings_dict['embedding'][lab.item()]) for lab in padded_true_horizon_indices.view(-1) if lab != -1]).to(device)
             pred_horizon_embeddings = torch.stack([pred for pred, lab in zip(padded_pred_horizon_embeddings.view(-1, padded_pred_horizon_embeddings.size(-1)), padded_true_horizon_indices.view(-1)) if lab != -1]).to(device)
@@ -314,11 +337,11 @@ class SimpleHorizonClassificationExperiment(Experiment):
         eval_loader_tqdm = tqdm(eval_loader, desc="Evaluating", leave=False)
         with torch.no_grad():
             for batch in eval_loader_tqdm:
-                segments, geotemp_features, padded_true_horizon_indices = batch
-                segments, geotemp_features, padded_true_horizon_indices = segments.to(device), geotemp_features.to(device), padded_true_horizon_indices.to(device)
+                segments, segments_tabular_features, geotemp_features, padded_true_horizon_indices = batch
+                segments, segments_tabular_features, geotemp_features, padded_true_horizon_indices = segments.to(device), segments_tabular_features.to(device), geotemp_features.to(device), padded_true_horizon_indices.to(device)
 
                 # Predict depth markers (as padded tensors)
-                padded_pred_horizon_embeddings = model(segments=segments, geo_temp_features=geotemp_features[:, 1:]) # 'index' column not used in model
+                padded_pred_horizon_embeddings = model(segments=segments, segments_tabular_features=segments_tabular_features, geo_temp_features=geotemp_features[:, 1:]) # 'index' column not used in model
                     
                 true_horizon_embeddings = torch.stack([torch.tensor(self.dataprocessor.embeddings_dict['embedding'][lab.item()]) for lab in padded_true_horizon_indices.view(-1) if lab != -1]).to(device)
                 pred_horizon_embeddings = torch.stack([pred for pred, lab in zip(padded_pred_horizon_embeddings.view(-1, padded_pred_horizon_embeddings.size(-1)), padded_true_horizon_indices.view(-1)) if lab != -1]).to(device)
@@ -352,4 +375,8 @@ class SimpleHorizonClassificationExperiment(Experiment):
     
     @staticmethod
     def get_experiment_hyperparameters():
-        return {}
+        return {
+            'segments_output_dim': 512,
+            'segments_tabular_output_dim': 256,
+            'geo_temp_output_dim': 256
+        }
