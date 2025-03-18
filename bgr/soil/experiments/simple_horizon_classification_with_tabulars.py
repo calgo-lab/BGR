@@ -285,6 +285,7 @@ class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
             true_horizon_embeddings = torch.stack([torch.tensor(self.dataprocessor.embeddings_dict['embedding'][lab.item()]) for lab in padded_true_horizon_indices.view(-1) if lab != -1]).to(device)
             pred_horizon_embeddings = torch.stack([pred for pred, lab in zip(padded_pred_horizon_embeddings.view(-1, padded_pred_horizon_embeddings.size(-1)), padded_true_horizon_indices.view(-1)) if lab != -1]).to(device)
             true_horizon_indices = padded_true_horizon_indices.view(-1)[padded_true_horizon_indices.view(-1) != -1]
+            pred_horizon_indices = torch.argmax(torch.matmul(pred_horizon_embeddings, self.dataprocessor.embeddings_dict['embedding'].T), dim=1)
                 
             # Normalize embeddings for the cosine loss, true embeddings are already normalized
             pred_horizon_embeddings = F.normalize(pred_horizon_embeddings, p=2, dim=1)
@@ -303,8 +304,7 @@ class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
             train_topk_correct += self.horizon_topk_acc(self.topk)(pred_horizon_embeddings, true_horizon_indices)
             
             # Append predictions and labels for F1 score
-            _, batch_predictions = torch.max(pred_horizon_embeddings, dim=1)
-            all_predictions.append(batch_predictions.cpu())
+            all_predictions.append(pred_horizon_indices.cpu())
             all_labels.append(true_horizon_indices.cpu())
 
             train_loader_tqdm.set_postfix(loss=train_loss.item())
@@ -337,6 +337,7 @@ class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
                 true_horizon_embeddings = torch.stack([torch.tensor(self.dataprocessor.embeddings_dict['embedding'][lab.item()]) for lab in padded_true_horizon_indices.view(-1) if lab != -1]).to(device)
                 pred_horizon_embeddings = torch.stack([pred for pred, lab in zip(padded_pred_horizon_embeddings.view(-1, padded_pred_horizon_embeddings.size(-1)), padded_true_horizon_indices.view(-1)) if lab != -1]).to(device)
                 true_horizon_indices = padded_true_horizon_indices.view(-1)[padded_true_horizon_indices.view(-1) != -1]
+                pred_horizon_indices = torch.argmax(torch.matmul(pred_horizon_embeddings, self.dataprocessor.embeddings_dict['embedding'].T), dim=1)
                     
                 # Normalize embeddings for the cosine loss, true embeddings are already normalized
                 pred_horizon_embeddings = F.normalize(pred_horizon_embeddings, p=2, dim=1)
@@ -352,8 +353,7 @@ class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
                 eval_topk_correct += self.horizon_topk_acc(self.topk)(pred_horizon_embeddings, true_horizon_indices)
                 
                 # Append predictions and labels for F1 score
-                _, batch_predictions = torch.max(pred_horizon_embeddings, dim=1)
-                all_predictions.append(batch_predictions.cpu())
+                all_predictions.append(pred_horizon_indices.cpu())
                 all_labels.append(true_horizon_indices.cpu())
             
             # Average losses over the batches
