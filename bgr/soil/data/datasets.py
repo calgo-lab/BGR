@@ -93,7 +93,7 @@ class SegmentsTabularDataset(Dataset):
         label_column : str ='Horizontsymbol_relevant', # TODO: Maybe this doesnt work?
         max_segments : int =8,
         feature_columns : list =None,
-        segments_tab_feature_columns : list = None,
+        segments_tab_num_feature_columns : list = None,
         segments_tab_categ_feature_columns : dict =None
     ):
         """
@@ -108,7 +108,7 @@ class SegmentsTabularDataset(Dataset):
             label_column (str): Column name for labels in the DataFrame.
             max_segments (int): Maximum number of segments per image.
             feature_columns (list, optional): List of column names for tabular features. Defaults to None.
-            segments_tab_feature_columns (list, optional): List of column names for segment-specific tabular features. Defaults to None.
+            segments_tab_num_feature_columns (list, optional): List of column names for segment-specific tabular features. Defaults to None.
             segments_tab_categ_feature_columns (dict, optional): Dictionary of column names for segment-specific categorical features, with the number of categories as values. Defaults to None.
         """
         self.dataframe = dataframe
@@ -119,7 +119,7 @@ class SegmentsTabularDataset(Dataset):
         self.label_column = label_column
         self.max_segments = max_segments
         self.feature_columns = feature_columns
-        self.segments_tabular_features = segments_tab_feature_columns
+        self.segments_tabular_num_features = segments_tab_num_feature_columns
         self.segments_tab_categ_features = segments_tab_categ_feature_columns
         
         if self.normalize is None:
@@ -169,8 +169,8 @@ class SegmentsTabularDataset(Dataset):
             segments.append(segment)
             
             # Extract segment-specific tabular features
-            if self.segments_tabular_features:
-                segment_tabular_features_array = [row[feature][i] for feature in self.segments_tabular_features]
+            if self.segments_tabular_num_features:
+                segment_tabular_features_array = [row[feature][i] for feature in self.segments_tabular_num_features]
                 segment_tabular_features = torch.tensor(segment_tabular_features_array, dtype=torch.float32)
                 segments_specific_tabular_features.append(segment_tabular_features)
                 
@@ -183,10 +183,10 @@ class SegmentsTabularDataset(Dataset):
                 cum_sum = 0
                 for idx, value in enumerate(segment_tabular_features_array):
                     onehot_encoded_tabular_feature_array[cum_sum + value] = 1
-                    cum_sum += self.segments_tab_categ_features.values()[idx]
+                    cum_sum += list(self.segments_tab_categ_features.values())[idx]
                 
                 segment_onehot_tabular_features = torch.tensor(onehot_encoded_tabular_feature_array, dtype=torch.long)
-                segments_specific_tabular_features[i].cat(segment_onehot_tabular_features)
+                segments_specific_tabular_features[i] = torch.cat([segments_specific_tabular_features[i], segment_onehot_tabular_features], dim=0)
             
             # Extract the depth and label
             label = torch.tensor(row[self.label_column][i], dtype=torch.long)
@@ -198,7 +198,7 @@ class SegmentsTabularDataset(Dataset):
             segments.append(torch.zeros_like(segments[0]))
             
             # Pad segments tabular features with zeros
-            if self.segments_tabular_features:
+            if self.segments_tabular_num_features:
                 segments_specific_tabular_features.append(torch.zeros_like(segments_specific_tabular_features[0]))
             
             # Pad labels with -1
@@ -206,7 +206,7 @@ class SegmentsTabularDataset(Dataset):
 
         # Convert segments, segments tabular features and labels to tensors
         segments = torch.stack(segments)
-        if self.segments_tabular_features:
+        if self.segments_tabular_num_features:
             segments_specific_tabular_features = torch.stack(segments_specific_tabular_features)
         labels = torch.tensor(labels, dtype=torch.long)
 
@@ -215,12 +215,12 @@ class SegmentsTabularDataset(Dataset):
             tabular_features_array = row[self.feature_columns].astype(float).values
             tabular_features = torch.tensor(tabular_features_array, dtype=torch.float32)
         
-            if self.segments_tabular_features:
+            if self.segments_tabular_num_features:
                 return segments, segments_specific_tabular_features, tabular_features, labels
             else:
                 return segments, tabular_features, labels
         else:
-            if self.segments_tabular_features:
+            if self.segments_tabular_num_features:
                 return segments, segments_specific_tabular_features, labels
             else:
                 return segments, labels
