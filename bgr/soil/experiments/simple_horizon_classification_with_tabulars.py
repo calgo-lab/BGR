@@ -38,9 +38,10 @@ class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
         # Without Bodenart und Bodenfarbe
         self.segments_tabular_feature_columns = ['Steine', 'Karbonat', 'Humusgehaltsklasse', 'Durchwurzelung']
         
+        self.label_embeddings_tensor = torch.tensor(self.dataprocessor.embeddings_dict['embedding'], device=self.training_args.device).float()
         self.cosine_loss = nn.CosineEmbeddingLoss()
         self.topk = 5
-        self.horizon_topk_acc = lambda k : TopKHorizonAccuracy(torch.tensor(self.dataprocessor.embeddings_dict['embedding'], device=self.training_args.device).float(), k=k)
+        self.horizon_topk_acc = lambda k : TopKHorizonAccuracy(self.label_embeddings_tensor, k=k)
         self.f1_average = 'macro'
         self.image_normalization = transforms.Compose([
             transforms.ToTensor(),
@@ -285,7 +286,7 @@ class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
             true_horizon_embeddings = torch.stack([torch.tensor(self.dataprocessor.embeddings_dict['embedding'][lab.item()]) for lab in padded_true_horizon_indices.view(-1) if lab != -1]).to(device)
             pred_horizon_embeddings = torch.stack([pred for pred, lab in zip(padded_pred_horizon_embeddings.view(-1, padded_pred_horizon_embeddings.size(-1)), padded_true_horizon_indices.view(-1)) if lab != -1]).to(device)
             true_horizon_indices = padded_true_horizon_indices.view(-1)[padded_true_horizon_indices.view(-1) != -1]
-            pred_horizon_indices = torch.argmax(torch.matmul(pred_horizon_embeddings, self.dataprocessor.embeddings_dict['embedding'].T), dim=1)
+            pred_horizon_indices = torch.argmax(torch.matmul(pred_horizon_embeddings, self.label_embeddings_tensor.T), dim=1)
                 
             # Normalize embeddings for the cosine loss, true embeddings are already normalized
             pred_horizon_embeddings = F.normalize(pred_horizon_embeddings, p=2, dim=1)
@@ -337,7 +338,7 @@ class SimpleHorizonClassificationWithTabularsExperiment(Experiment):
                 true_horizon_embeddings = torch.stack([torch.tensor(self.dataprocessor.embeddings_dict['embedding'][lab.item()]) for lab in padded_true_horizon_indices.view(-1) if lab != -1]).to(device)
                 pred_horizon_embeddings = torch.stack([pred for pred, lab in zip(padded_pred_horizon_embeddings.view(-1, padded_pred_horizon_embeddings.size(-1)), padded_true_horizon_indices.view(-1)) if lab != -1]).to(device)
                 true_horizon_indices = padded_true_horizon_indices.view(-1)[padded_true_horizon_indices.view(-1) != -1]
-                pred_horizon_indices = torch.argmax(torch.matmul(pred_horizon_embeddings, self.dataprocessor.embeddings_dict['embedding'].T), dim=1)
+                pred_horizon_indices = torch.argmax(torch.matmul(pred_horizon_embeddings, self.label_embeddings_tensor.T), dim=1)
                     
                 # Normalize embeddings for the cosine loss, true embeddings are already normalized
                 pred_horizon_embeddings = F.normalize(pred_horizon_embeddings, p=2, dim=1)
