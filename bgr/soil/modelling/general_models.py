@@ -177,6 +177,37 @@ class SimpleHorizonClassifier(nn.Module):
         segment_logits = self.classifier(segment_features)
         
         return segment_logits
+    
+class SimpleHorizonClassifierWithEmbeddings(nn.Module):
+    def __init__(
+        self,
+        patch_size=512,
+        segment_encoder_output_dim=512,
+        embedding_dim=61,
+    ):
+        super(SimpleHorizonClassifierWithEmbeddings, self).__init__()
+        
+        self.segment_encoder = PatchCNNEncoder(patch_size=patch_size, patch_stride=patch_size, output_dim=segment_encoder_output_dim)
+        self.horizon_embedder = HorizonEmbedder(input_dim=segment_encoder_output_dim, output_dim=embedding_dim)
+    
+    def forward(self, segments):
+        batch_size, num_segments, C, H, W = segments.shape
+        
+        # Encode each segment individually
+        segment_features_list = []
+        for i in range(num_segments):
+            segment = segments[:, i, :, :, :]
+            segment_features = self.segment_encoder(segment)
+            segment_features_list.append(segment_features)
+        segment_features = torch.stack(segment_features_list, dim=1)
+        
+        # Flatten the segment features and geo_temp_features to match the expected input dimensions
+        segment_features = segment_features.view(batch_size * num_segments, -1)
+        
+        # Compute the horizon embeddings
+        horizon_embeddings = self.horizon_embedder(segment_features)
+        
+        return horizon_embeddings
 
 class SimpleHorizonClassifierWithEmbeddingsGeotemps(nn.Module):
     def __init__(

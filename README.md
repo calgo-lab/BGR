@@ -12,7 +12,7 @@ options:
 
 - [x] Segments + No Embeddings (Cross Entropy)
 
-- [ ] Segments + Embeddings (Cosine Loss)
+- [x] Segments + Embeddings (Cosine Loss)
 
 - [x] Segments + Embeddings (Cosine Loss) + Geotemps
 
