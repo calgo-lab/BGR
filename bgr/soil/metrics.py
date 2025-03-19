@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 class TopKHorizonAccuracy(nn.Module):
     def __init__(self, label_embeddings, k=5):
         """
@@ -72,6 +71,83 @@ class TopKLoss(nn.Module):
         # Compute loss only for the top-k classes
         loss = -top_k_probabilities[target_mask].mean()
         return loss
+
+class PrecisionRecallAtK(nn.Module):
+    def __init__(self, label_embeddings, k=5):
+        """
+        Computes Precision@K and Recall@K based on cosine similarity between predicted and true label embeddings.
+
+        Args:
+            label_embeddings (torch.Tensor): A fixed matrix of shape (num_labels, embedding_dim) containing true label embeddings.
+            k (int): The number of nearest neighbors to consider.
+        """
+        super(PrecisionRecallAtK, self).__init__()
+        self.label_embeddings = label_embeddings  # Predefined label embeddings (num_labels, embedding_dim)
+        self.k = k
+
+    def forward(self, predicted_embeddings, true_labels):
+        """
+        Args:
+            predicted_embeddings (torch.Tensor): The model's predicted embeddings (batch_size, embedding_dim).
+            true_labels (torch.Tensor): The true label indices corresponding to each row in `label_embeddings` (batch_size,).
+
+        Returns:
+            precision_at_k (float): Precision@K over the batch.
+            recall_at_k (float): Recall@K over the batch.
+        """
+        batch_size = predicted_embeddings.size(0)
+
+        # Normalize embeddings for cosine similarity
+        normalized_preds = F.normalize(predicted_embeddings, p=2, dim=1)
+        normalized_labels = F.normalize(self.label_embeddings, p=2, dim=1)
+
+        # Compute cosine similarity
+        similarity = torch.matmul(normalized_preds, normalized_labels.T)  # (batch_size, num_labels)
+
+        # Get indices of top-k nearest embeddings
+        top_k_indices = torch.topk(similarity, self.k, dim=1).indices  # (batch_size, k)
+
+        # Check if the true label index is in the top-k predictions
+        relevant = (top_k_indices == true_labels.unsqueeze(1))  # (batch_size, k)
+
+        # Compute Precision@K
+        precision_at_k = relevant.sum().item() / (self.k * batch_size)  # Relevant retrieved / Total retrieved
+
+        # Compute Recall@K
+        recall_at_k = relevant.any(dim=1).float().mean().item()  # Relevant retrieved / Total relevant
+
+        return precision_at_k, recall_at_k
+
+import torch
+
+def precision_recall_at_k_logits(logits, true_labels, k=5):
+    """
+    Computes Precision@K and Recall@K for multi-class classification using logits.
+
+    Args:
+        logits (torch.Tensor): The model's predicted logits (batch_size, num_classes).
+        true_labels (torch.Tensor): The true labels (batch_size,).
+        k (int): The number of top predictions to consider.
+
+    Returns:
+        precision_at_k (float): Precision@K over the batch.
+        recall_at_k (float): Recall@K over the batch.
+    """
+    batch_size = logits.size(0)
+
+    # Get indices of top-k predicted classes
+    top_k_indices = torch.topk(logits, k, dim=1).indices  # (batch_size, k)
+
+    # Check if the true label is in the top-k predictions
+    relevant = (top_k_indices == true_labels.unsqueeze(1))  # (batch_size, k)
+
+    # Compute Precision@K
+    precision_at_k = relevant.sum().item() / (k * batch_size)  # Relevant retrieved / Total retrieved
+
+    # Compute Recall@K
+    recall_at_k = relevant.any(dim=1).float().mean().item()  # Relevant retrieved / Total relevant
+
+    return precision_at_k, recall_at_k
 
 
 class DepthMarkerLoss(nn.Module):
