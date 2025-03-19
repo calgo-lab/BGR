@@ -118,8 +118,6 @@ class PrecisionRecallAtK(nn.Module):
 
         return precision_at_k, recall_at_k
 
-import torch
-
 def precision_recall_at_k_logits(logits, true_labels, k=5):
     """
     Computes Precision@K and Recall@K for multi-class classification using logits.
