@@ -19,3 +19,13 @@ options:
 - [x] Segments + Embeddings (Cosine Loss) + Geotemps + MLP
 
 - [x] Segments + Embeddings (Cosine Loss) + Geotemps + MLP + Tabulars + MLP
+
+- [ ] Sequence to Sequence Modeling of Horizon Labels
+
+- [ ] Tok-K Macro F1 Score
+
+- [ ] Confusion Matrix
+
+- [ ] Abstract for Thünen Institute
+
+- [ ] Different Horizonsymbol-Embedding Approaches
