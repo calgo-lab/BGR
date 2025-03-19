@@ -202,7 +202,7 @@ class SimpleHorizonClassificationWithEmbeddingsGeotempsMLPTabMLP(Experiment):
         return SimpleHorizonClassifierWithEmbeddingsGeotempsMLPTabMLP(
             geo_temp_input_dim=len(self.dataprocessor.geotemp_img_infos) - 2, # without index and img path
             segments_tabular_input_dim=len(self.segments_tabular_feature_columns) + sum(self.segments_tabular_categ_feature_columns.values()),
-            segments_output_dim=self.segments_output_dim,
+            segment_encoder_output_dim=self.segment_encoder_output_dim,
             segments_tabular_output_dim=self.segments_tabular_output_dim,
             geo_temp_output_dim=self.geo_temp_output_dim,
             embedding_dim=np.shape(self.dataprocessor.embeddings_dict['embedding'])[1]
@@ -376,7 +376,8 @@ class SimpleHorizonClassificationWithEmbeddingsGeotempsMLPTabMLP(Experiment):
     @staticmethod
     def get_experiment_hyperparameters():
         return {
-            'segments_output_dim': 512,
+            'segment_encoder_output_dim': 512,
             'segments_tabular_output_dim': 256,
-            'geo_temp_output_dim': 256
+            'geo_temp_output_dim': 256,
+            'patch_size': 512
         }

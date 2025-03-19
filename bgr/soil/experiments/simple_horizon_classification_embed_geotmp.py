@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 from bgr.soil.data.horizon_tabular_data import HorizonDataProcessor
 from bgr.soil.experiments import Experiment
-from bgr.soil.modelling.general_models import SimpleHorizonClassifierWithEmbeddingsGeotempsMLP
+from bgr.soil.modelling.general_models import SimpleHorizonClassifierWithEmbeddingsGeotemps
 from bgr.soil.metrics import TopKHorizonAccuracy
 from bgr.soil.data.datasets import SegmentsTabularDataset
 
@@ -27,7 +27,7 @@ from bgr.soil.data.datasets import SegmentsTabularDataset
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class SimpleHorizonClassificationEmbeddingsGeotempMLP(Experiment):
+class SimpleHorizonClassificationEmbeddingsGeotemp(Experiment):
     def __init__(self, training_args: 'TrainingArgs', target: str, dataprocessor: HorizonDataProcessor):
         self.training_args = training_args
         self.target = target
@@ -45,7 +45,7 @@ class SimpleHorizonClassificationEmbeddingsGeotempMLP(Experiment):
         ])
         
         # Retrieve the experiment hyperparameters
-        self.hyperparameters = SimpleHorizonClassificationEmbeddingsGeotempMLP.get_experiment_hyperparameters()
+        self.hyperparameters = SimpleHorizonClassificationEmbeddingsGeotemp.get_experiment_hyperparameters()
         self.hyperparameters.update(training_args.hyperparameters)
     
     def train_and_validate(self,
@@ -183,11 +183,10 @@ class SimpleHorizonClassificationEmbeddingsGeotempMLP(Experiment):
         return test_metrics
     
     def get_model(self) -> nn.Module:
-        return SimpleHorizonClassifierWithEmbeddingsGeotempsMLP(
+        return SimpleHorizonClassifierWithEmbeddingsGeotemps(
             geo_temp_input_dim=len(self.dataprocessor.geotemp_img_infos) - 2, # without index and img path
-            geo_temp_output_dim=self.hyperparameters['geo_temp_output_dim'],
-            patch_size=self.hyperparameters['patch_size'],
             segment_encoder_output_dim=self.hyperparameters['segment_encoder_output_dim'],
+            patch_size=self.hyperparameters['patch_size'],
             embedding_dim=np.shape(self.dataprocessor.embeddings_dict['embedding'])[1]
         )
     
@@ -359,7 +358,6 @@ class SimpleHorizonClassificationEmbeddingsGeotempMLP(Experiment):
     @staticmethod
     def get_experiment_hyperparameters():
         return {
-            'geo_temp_output_dim' : 256,
             'segment_encoder_output_dim' : 512,
             'patch_size' : 512
         }

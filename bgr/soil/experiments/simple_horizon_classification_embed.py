@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 from bgr.soil.data.horizon_tabular_data import HorizonDataProcessor
 from bgr.soil.experiments import Experiment
-from bgr.soil.modelling.general_models import SimpleHorizonClassifierWithEmbeddingsGeotempsMLP
+from bgr.soil.modelling.general_models import SimpleHorizonClassifierWithEmbeddings
 from bgr.soil.metrics import TopKHorizonAccuracy
 from bgr.soil.data.datasets import SegmentsTabularDataset
 
@@ -27,7 +27,7 @@ from bgr.soil.data.datasets import SegmentsTabularDataset
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class SimpleHorizonClassificationEmbeddingsGeotempMLP(Experiment):
+class SimpleHorizonClassificationEmbeddings(Experiment):
     def __init__(self, training_args: 'TrainingArgs', target: str, dataprocessor: HorizonDataProcessor):
         self.training_args = training_args
         self.target = target
@@ -45,7 +45,7 @@ class SimpleHorizonClassificationEmbeddingsGeotempMLP(Experiment):
         ])
         
         # Retrieve the experiment hyperparameters
-        self.hyperparameters = SimpleHorizonClassificationEmbeddingsGeotempMLP.get_experiment_hyperparameters()
+        self.hyperparameters = SimpleHorizonClassificationEmbeddings.get_experiment_hyperparameters()
         self.hyperparameters.update(training_args.hyperparameters)
     
     def train_and_validate(self,
@@ -57,16 +57,14 @@ class SimpleHorizonClassificationEmbeddingsGeotempMLP(Experiment):
         train_dataset = SegmentsTabularDataset(
             dataframe=train_df,
             normalize=self.image_normalization,
-            label_column=self.target,
-            feature_columns=self.dataprocessor.geotemp_img_infos[:-1] # without 'file'
+            label_column=self.target
         )
         train_loader = DataLoader(train_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
         val_dataset = SegmentsTabularDataset(
             dataframe=val_df,
             normalize=self.image_normalization,
-            label_column=self.target,
-            feature_columns=self.dataprocessor.geotemp_img_infos[:-1] # without 'file'
+            label_column=self.target
         )
         val_loader = DataLoader(val_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
@@ -158,8 +156,7 @@ class SimpleHorizonClassificationEmbeddingsGeotempMLP(Experiment):
         test_dataset = SegmentsTabularDataset(
             dataframe=test_df,
             normalize=self.image_normalization,
-            label_column=self.target,
-            feature_columns=self.dataprocessor.geotemp_img_infos[:-1] # without 'file'
+            label_column=self.target
         )
         test_loader = DataLoader(test_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
@@ -183,11 +180,9 @@ class SimpleHorizonClassificationEmbeddingsGeotempMLP(Experiment):
         return test_metrics
     
     def get_model(self) -> nn.Module:
-        return SimpleHorizonClassifierWithEmbeddingsGeotempsMLP(
-            geo_temp_input_dim=len(self.dataprocessor.geotemp_img_infos) - 2, # without index and img path
-            geo_temp_output_dim=self.hyperparameters['geo_temp_output_dim'],
-            patch_size=self.hyperparameters['patch_size'],
+        return SimpleHorizonClassifierWithEmbeddings(
             segment_encoder_output_dim=self.hyperparameters['segment_encoder_output_dim'],
+            patch_size=self.hyperparameters['patch_size'],
             embedding_dim=np.shape(self.dataprocessor.embeddings_dict['embedding'])[1]
         )
     
@@ -266,13 +261,13 @@ class SimpleHorizonClassificationEmbeddingsGeotempMLP(Experiment):
         
         train_loader_tqdm = tqdm(train_loader, desc="Training", leave=False)
         for batch in train_loader_tqdm:
-            segments, geotemp_features, padded_true_horizon_indices = batch
-            segments, geotemp_features, padded_true_horizon_indices = segments.to(device), geotemp_features.to(device), padded_true_horizon_indices.to(device)
+            segments, padded_true_horizon_indices = batch
+            segments, padded_true_horizon_indices = segments.to(device), padded_true_horizon_indices.to(device)
 
             optimizer.zero_grad() # otherwise, PyTorch accumulates the gradients during backprop
 
-            # Predict depth markers (as padded tensors)
-            padded_pred_horizon_embeddings = model(segments=segments, geo_temp_features=geotemp_features[:, 1:]) # 'index' column not used in model
+            # Predict horizons (as padded tensors)
+            padded_pred_horizon_embeddings = model(segments=segments)
                 
             true_horizon_embeddings = torch.stack([torch.tensor(self.dataprocessor.embeddings_dict['embedding'][lab.item()]) for lab in padded_true_horizon_indices.view(-1) if lab != -1]).to(device)
             pred_horizon_embeddings = torch.stack([pred for pred, lab in zip(padded_pred_horizon_embeddings.view(-1, padded_pred_horizon_embeddings.size(-1)), padded_true_horizon_indices.view(-1)) if lab != -1]).to(device)
@@ -320,11 +315,11 @@ class SimpleHorizonClassificationEmbeddingsGeotempMLP(Experiment):
         eval_loader_tqdm = tqdm(eval_loader, desc="Evaluating", leave=False)
         with torch.no_grad():
             for batch in eval_loader_tqdm:
-                segments, geotemp_features, padded_true_horizon_indices = batch
-                segments, geotemp_features, padded_true_horizon_indices = segments.to(device), geotemp_features.to(device), padded_true_horizon_indices.to(device)
+                segments, padded_true_horizon_indices = batch
+                segments, padded_true_horizon_indices = segments.to(device), padded_true_horizon_indices.to(device)
 
-                # Predict depth markers (as padded tensors)
-                padded_pred_horizon_embeddings = model(segments=segments, geo_temp_features=geotemp_features[:, 1:]) # 'index' column not used in model
+                # Predict horizons (as padded tensors)
+                padded_pred_horizon_embeddings = model(segments=segments)
                     
                 true_horizon_embeddings = torch.stack([torch.tensor(self.dataprocessor.embeddings_dict['embedding'][lab.item()]) for lab in padded_true_horizon_indices.view(-1) if lab != -1]).to(device)
                 pred_horizon_embeddings = torch.stack([pred for pred, lab in zip(padded_pred_horizon_embeddings.view(-1, padded_pred_horizon_embeddings.size(-1)), padded_true_horizon_indices.view(-1)) if lab != -1]).to(device)
@@ -359,7 +354,6 @@ class SimpleHorizonClassificationEmbeddingsGeotempMLP(Experiment):
     @staticmethod
     def get_experiment_hyperparameters():
         return {
-            'geo_temp_output_dim' : 256,
             'segment_encoder_output_dim' : 512,
             'patch_size' : 512
         }
