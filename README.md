@@ -29,3 +29,5 @@ options:
 - [ ] Abstract for Thünen Institute
 
 - [ ] Different Horizonsymbol-Embedding Approaches
+
+- [ ] Processing the Lat/Long and Datetime
