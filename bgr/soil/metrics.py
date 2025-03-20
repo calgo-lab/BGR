@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from sklearn.metrics import precision_score, recall_score
 
 class TopKHorizonAccuracy(nn.Module):
     def __init__(self, label_embeddings, k=5):
@@ -73,7 +74,7 @@ class TopKLoss(nn.Module):
         return loss
 
 class PrecisionRecallAtK(nn.Module):
-    def __init__(self, label_embeddings, k=5):
+    def __init__(self, label_embeddings, k=5, average='macro'):
         """
         Computes Precision@K and Recall@K based on cosine similarity between predicted and true label embeddings.
 
@@ -84,6 +85,7 @@ class PrecisionRecallAtK(nn.Module):
         super(PrecisionRecallAtK, self).__init__()
         self.label_embeddings = label_embeddings  # Predefined label embeddings (num_labels, embedding_dim)
         self.k = k
+        self.average = average
 
     def forward(self, predicted_embeddings, true_labels):
         """
@@ -95,8 +97,6 @@ class PrecisionRecallAtK(nn.Module):
             precision_at_k (float): Precision@K over the batch.
             recall_at_k (float): Recall@K over the batch.
         """
-        batch_size = predicted_embeddings.size(0)
-
         # Normalize embeddings for cosine similarity
         normalized_preds = F.normalize(predicted_embeddings, p=2, dim=1)
         normalized_labels = F.normalize(self.label_embeddings, p=2, dim=1)
@@ -107,18 +107,30 @@ class PrecisionRecallAtK(nn.Module):
         # Get indices of top-k nearest embeddings
         top_k_indices = torch.topk(similarity, self.k, dim=1).indices  # (batch_size, k)
 
-        # Check if the true label index is in the top-k predictions
+        # Initialize predicted_labels with the top-1 prediction (i.e. first column)
+        predicted_labels = top_k_indices[:, 0].clone()  # (batch_size,)
+        
+        # Check for each sample if the true label is among the top-K predictions
         relevant = (top_k_indices == true_labels.unsqueeze(1))  # (batch_size, k)
-
-        # Compute Precision@K
-        precision_at_k = relevant.sum().item() / (self.k * batch_size)  # Relevant retrieved / Total retrieved
-
-        # Compute Recall@K
-        recall_at_k = relevant.any(dim=1).float().mean().item()  # Relevant retrieved / Total relevant
-
+        hit = relevant.any(dim=1)  # (batch_size,) Boolean: True if true label is in top-K
+        
+        # For samples with a "hit", replace the predicted label with the true label
+        predicted_labels[hit] = true_labels[hit]
+        
+        # Convert tensors to numpy arrays for sklearn functions
+        y_pred = predicted_labels.cpu().numpy()
+        y_true = true_labels.cpu().numpy()
+        
+        # Define the full list of labels to ensure all classes are considered
+        all_labels = list(range(self.label_embeddings.size(0)))
+        
+        # Compute precision and recall using sklearn with the desired averaging
+        precision_at_k = precision_score(y_true, y_pred, average=self.average, labels=all_labels, zero_division=0)
+        recall_at_k = recall_score(y_true, y_pred, average=self.average, labels=all_labels, zero_division=0)
+        
         return precision_at_k, recall_at_k
 
-def precision_recall_at_k_logits(logits, true_labels, k=5):
+def precision_recall_at_k_logits(logits, true_labels, k=5, average='macro'):
     """
     Computes Precision@K and Recall@K for multi-class classification using logits.
 
@@ -131,20 +143,31 @@ def precision_recall_at_k_logits(logits, true_labels, k=5):
         precision_at_k (float): Precision@K over the batch.
         recall_at_k (float): Recall@K over the batch.
     """
-    batch_size = logits.size(0)
 
     # Get indices of top-k predicted classes
     top_k_indices = torch.topk(logits, k, dim=1).indices  # (batch_size, k)
 
-    # Check if the true label is in the top-k predictions
+    # Initialize predicted_labels with the top-1 prediction (i.e. first column)
+    predicted_labels = top_k_indices[:, 0].clone()  # (batch_size,)
+    
+    # Check for each sample if the true label is among the top-K predictions
     relevant = (top_k_indices == true_labels.unsqueeze(1))  # (batch_size, k)
-
-    # Compute Precision@K
-    precision_at_k = relevant.sum().item() / (k * batch_size)  # Relevant retrieved / Total retrieved
-
-    # Compute Recall@K
-    recall_at_k = relevant.any(dim=1).float().mean().item()  # Relevant retrieved / Total relevant
-
+    hit = relevant.any(dim=1)  # (batch_size,) Boolean: True if true label is in top-K
+    
+    # For samples with a "hit", replace the predicted label with the true label
+    predicted_labels[hit] = true_labels[hit]
+    
+    # Convert tensors to numpy arrays for sklearn functions
+    y_pred = predicted_labels.cpu().numpy()
+    y_true = true_labels.cpu().numpy()
+    
+    # Define the full list of labels to ensure all classes are considered
+    all_labels = list(range(logits.size(1)))
+    
+    # Compute precision and recall using sklearn with the desired averaging
+    precision_at_k = precision_score(y_true, y_pred, average=average, labels=all_labels, zero_division=0)
+    recall_at_k = recall_score(y_true, y_pred, average=average, labels=all_labels, zero_division=0)
+    
     return precision_at_k, recall_at_k
 
 
