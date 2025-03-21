@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 from bgr.soil.data.horizon_tabular_data import HorizonDataProcessor
 from bgr.soil.experiments import Experiment
 from bgr.soil.modelling.general_models import SimpleHorizonClassifier
-from bgr.soil.metrics import top_k_accuracy, precision_recall_at_k_logits
+from bgr.soil.metrics import top_k_accuracy, precision_recall_at_k
 from bgr.soil.data.datasets import SegmentsTabularDataset
 
 # Configure logging
@@ -274,10 +274,8 @@ class SimpleHorizonClassification(Experiment):
         train_loss_total = 0.0
         train_correct = 0
         train_topk_correct = 0
-        train_topk_precision = 0
-        train_topk_recall = 0
         
-        all_predictions = []
+        all_topk_predictions = []
         all_labels = []
         
         train_loader_tqdm = tqdm(train_loader, desc="Training", leave=False)
@@ -295,7 +293,7 @@ class SimpleHorizonClassification(Experiment):
 
             logits = padded_logits.view(-1, padded_logits.size(-1))[mask]  # Apply mask
             true_horizon_indices = padded_true_horizon_indices.view(-1)[mask]
-            pred_horizon_indices = torch.argmax(padded_logits.view(-1, padded_logits.size(-1)), dim=1)[mask]  # Apply same mask
+            pred_topk_horizon_indices = torch.topk(padded_logits.view(-1, padded_logits.size(-1)), k=self.topk, dim=1).indices[mask]  # Apply same mask
                 
             # Compute individual losses, then sum them together for backprop
             train_loss = self.cross_entropy_loss(logits, true_horizon_indices)
@@ -308,13 +306,8 @@ class SimpleHorizonClassification(Experiment):
             train_correct += top_k_accuracy(logits, true_horizon_indices, 1)
             train_topk_correct += top_k_accuracy(logits, true_horizon_indices, self.topk)
             
-            # Calculate precision and recall at k
-            precision_at_k, recall_at_k = precision_recall_at_k_logits(logits, true_horizon_indices, self.topk, average=self.f1_average)
-            train_topk_precision += precision_at_k
-            train_topk_recall += recall_at_k
-            
-            # Append predictions and labels for F1 score
-            all_predictions.append(pred_horizon_indices.cpu())
+            # Append topk predictions and labels for Precision@k, Recall@k and F1 score
+            all_topk_predictions.append(pred_topk_horizon_indices.cpu())
             all_labels.append(true_horizon_indices.cpu())
 
             train_loader_tqdm.set_postfix(loss=train_loss.item())
@@ -323,26 +316,30 @@ class SimpleHorizonClassification(Experiment):
         avg_train_loss = train_loss_total / len(train_loader)
         avg_train_acc = train_correct / len(train_loader)
         avg_train_topk_acc = train_topk_correct / len(train_loader)
-        avg_train_precision_at_k = train_topk_precision / len(train_loader)
-        avg_train_recall_at_k = train_topk_recall / len(train_loader)
-        train_f1_score = f1_score(torch.cat(all_labels).numpy(), torch.cat(all_predictions).numpy(), average=self.f1_average)
+        
+        # Calculate precision@k, recall@k and F1 score
+        labels = torch.cat(all_labels)
+        possible_labels = list(range(logits.size(-1)))
+        top1_predictions = torch.cat(all_topk_predictions)[:, 0]
+        topk_predictions = torch.cat(all_topk_predictions)
+        
+        train_precision_at_k, train_recall_at_k = precision_recall_at_k(labels, topk_predictions, all_labels=possible_labels, average=self.f1_average)
+        train_f1_score = f1_score(labels.numpy(), top1_predictions.numpy(), labels=possible_labels, average=self.f1_average, zero_division=0)
         
         return \
             avg_train_loss, \
             avg_train_acc, \
             avg_train_topk_acc, \
-            avg_train_precision_at_k, \
-            avg_train_recall_at_k, \
+            train_precision_at_k, \
+            train_recall_at_k, \
             train_f1_score
 
     def _evaluate_model(self, eval_loader, device, model):
         eval_loss_total = 0.0
         eval_correct = 0
         eval_topk_correct = 0
-        eval_topk_precision = 0
-        eval_topk_recall = 0
         
-        all_predictions = []
+        all_topk_predictions = []
         all_labels = []
         
         eval_loader_tqdm = tqdm(eval_loader, desc="Evaluating", leave=False)
@@ -359,7 +356,7 @@ class SimpleHorizonClassification(Experiment):
 
                 logits = padded_logits.view(-1, padded_logits.size(-1))[mask]  # Apply mask
                 true_horizon_indices = padded_true_horizon_indices.view(-1)[mask]
-                pred_horizon_indices = torch.argmax(padded_logits.view(-1, padded_logits.size(-1)), dim=1)[mask]  # Apply same mask
+                pred_topk_horizon_indices = torch.topk(padded_logits.view(-1, padded_logits.size(-1)), k=self.topk, dim=1).indices[mask] # Apply same mask
                     
                 # Compute batch losses
                 val_loss = self.cross_entropy_loss(logits, true_horizon_indices)
@@ -369,29 +366,30 @@ class SimpleHorizonClassification(Experiment):
                 eval_correct += top_k_accuracy(logits, true_horizon_indices, 1)
                 eval_topk_correct += top_k_accuracy(logits, true_horizon_indices, self.topk)
                 
-                # Calculate precision and recall at k
-                precision_at_k, recall_at_k = precision_recall_at_k_logits(logits, true_horizon_indices, self.topk, average=self.f1_average)
-                eval_topk_precision += precision_at_k
-                eval_topk_recall += recall_at_k
-                
-                # Append predictions and labels for F1 score
-                all_predictions.append(pred_horizon_indices.cpu())
+                # Append topk predictions and labels for Precision@k, Recall@k and F1 score
+                all_topk_predictions.append(pred_topk_horizon_indices.cpu())
                 all_labels.append(true_horizon_indices.cpu())
             
             # Average losses over the batches
             avg_eval_loss = eval_loss_total / len(eval_loader)
             avg_eval_acc = eval_correct / len(eval_loader)
             avg_eval_topk_acc = eval_topk_correct / len(eval_loader)
-            avg_eval_precision_at_k = eval_topk_precision / len(eval_loader)
-            avg_eval_recall_at_k = eval_topk_recall / len(eval_loader)
-            eval_f1_score = f1_score(torch.cat(all_labels).numpy(), torch.cat(all_predictions).numpy(), average=self.f1_average)
+            
+            # Calculate precision@k, recall@k and F1 score
+            labels = torch.cat(all_labels)
+            possible_labels = list(range(logits.size(-1)))
+            top1_predictions = torch.cat(all_topk_predictions)[:, 0]
+            topk_predictions = torch.cat(all_topk_predictions)
+            
+            eval_precision_at_k, eval_recall_at_k = precision_recall_at_k(labels, topk_predictions, all_labels=possible_labels, average=self.f1_average)
+            eval_f1_score = f1_score(labels.numpy(), top1_predictions.numpy(), labels=possible_labels, average=self.f1_average, zero_division=0)
             
         return \
             avg_eval_loss, \
             avg_eval_acc, \
             avg_eval_topk_acc, \
-            avg_eval_precision_at_k, \
-            avg_eval_recall_at_k, \
+            eval_precision_at_k, \
+            eval_recall_at_k, \
             eval_f1_score
     
     @staticmethod
