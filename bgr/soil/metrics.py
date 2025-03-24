@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from sklearn.metrics import precision_score, recall_score
 
 class TopKHorizonAccuracy(nn.Module):
     def __init__(self, label_embeddings, k=5):
@@ -72,6 +72,40 @@ class TopKLoss(nn.Module):
         # Compute loss only for the top-k classes
         loss = -top_k_probabilities[target_mask].mean()
         return loss
+
+def precision_recall_at_k(true_labels, topk_predictions, all_labels, average='macro'):
+    """
+    Computes Precision@K and Recall@K for multi-class classification using logits.
+
+    Args:
+        logits (torch.Tensor): The model's predicted logits (batch_size, num_classes).
+        true_labels (torch.Tensor): The true labels (batch_size,).
+        k (int): The number of top predictions to consider.
+
+    Returns:
+        precision_at_k (float): Precision@K over the batch.
+        recall_at_k (float): Recall@K over the batch.
+    """
+
+    # Initialize predicted_labels with the top-1 prediction (i.e. first column)
+    predicted_labels = topk_predictions[:, 0].clone()  # (batch_size,)
+    
+    # Check for each sample if the true label is among the top-K predictions
+    relevant = (topk_predictions == true_labels.unsqueeze(1))  # (batch_size, k)
+    hit = relevant.any(dim=1)  # (batch_size,) Boolean: True if true label is in top-K
+    
+    # For samples with a "hit", replace the predicted label with the true label
+    predicted_labels[hit] = true_labels[hit]
+    
+    # Convert tensors to numpy arrays for sklearn functions
+    y_pred = predicted_labels.cpu().numpy()
+    y_true = true_labels.cpu().numpy()
+    
+    # Compute precision and recall using sklearn with the desired averaging
+    precision_at_k = precision_score(y_true, y_pred, average=average, labels=all_labels, zero_division=0)
+    recall_at_k = recall_score(y_true, y_pred, average=average, labels=all_labels, zero_division=0)
+    
+    return precision_at_k, recall_at_k
 
 
 class DepthMarkerLoss(nn.Module):
