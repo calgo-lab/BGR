@@ -117,15 +117,15 @@ class ExperimentRunner:
             model, metrics = experiment.train_and_validate(self.train_data, self.val_data, model_output_dir)
             wandb.log(metrics)
             
-            # Plot the losses
-            experiment.plot_losses(model_output_dir, self.wandb_plot_logging)
-            
             # Save the model
             self._save_model(model, model_output_dir)
             
             # Test the model
             test_metrics = experiment.test(model, self.test_data, model_output_dir)
             wandb.log(test_metrics)
+            
+            # Plot the losses
+            experiment.plot_losses(model_output_dir, self.wandb_plot_logging)
             
             metrics.update(test_metrics)
             

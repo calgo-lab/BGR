@@ -11,7 +11,7 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import wandb
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, precision_score, recall_score
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -47,6 +47,11 @@ class SimpleHorizonClassificationEmbeddings(Experiment):
         # Retrieve the experiment hyperparameters
         self.hyperparameters = SimpleHorizonClassificationEmbeddings.get_experiment_hyperparameters()
         self.hyperparameters.update(training_args.hyperparameters)
+        
+        # Initialize the labels and predictions dictionaries for confusion matrix
+        self.possible_labels = list(range(self.label_embeddings_tensor.size(0)))
+        self.labels = {'train': None, 'val': None, 'test': None}
+        self.predictions = {'train': None, 'val': None, 'test': None}
     
     def train_and_validate(self,
         train_df: pd.DataFrame,
@@ -79,6 +84,8 @@ class SimpleHorizonClassificationEmbeddings(Experiment):
         self.train_loss_history, self.val_loss_history = [], []
         self.train_acc_history, self.val_acc_history = [], []
         self.train_topk_acc_history, self.val_topk_acc_history = [], []
+        self.train_precision_history, self.val_precision_history = [], []
+        self.train_recall_history, self.val_recall_history = [], []
         self.train_precision_at_k_history, self.val_precision_at_k_history = [], []
         self.train_recall_at_k_history, self.val_recall_at_k_history = [], []
         self.train_f1_score_history, self.val_f1_score_history = [], []
@@ -89,11 +96,11 @@ class SimpleHorizonClassificationEmbeddings(Experiment):
             
             # Training loop
             model.train()
-            avg_train_loss, avg_train_acc, avg_train_topk_acc, avg_train_precision_at_k, avg_train_recall_at_k, train_f1_score = self._train_model(train_loader, self.training_args.device, model, optimizer)
+            avg_train_loss, avg_train_acc, avg_train_topk_acc, train_precision, train_recall, train_precision_at_k, train_recall_at_k, train_f1_score = self._train_model(train_loader, self.training_args.device, model, optimizer)
 
             # Evaluation loop
             model.eval() # Set model in evaluation mode before running inference
-            avg_val_loss, avg_val_acc, avg_val_topk_acc, avg_val_precision_at_k, avg_val_recall_at_k, val_f1_score = self._evaluate_model(val_loader, self.training_args.device, model)
+            avg_val_loss, avg_val_acc, avg_val_topk_acc, val_precision, val_recall, val_precision_at_k, val_recall_at_k, val_f1_score = self._evaluate_model(val_loader, self.training_args.device, model)
 
             epoch_metrics = {
                 'epoch' : epoch,
@@ -103,10 +110,14 @@ class SimpleHorizonClassificationEmbeddings(Experiment):
                 'val_acc': avg_val_acc,
                 'train_topk_correct': avg_train_topk_acc,
                 'val_topk_acc': avg_val_topk_acc,
-                'train_precision_at_k': avg_train_precision_at_k,
-                'val_precision_at_k': avg_val_precision_at_k,
-                'train_recall_at_k': avg_train_recall_at_k,
-                'val_recall_at_k': avg_val_recall_at_k,
+                'train_precision': train_precision,
+                'val_precision': val_precision,
+                'train_recall': train_recall,
+                'val_recall': val_recall,
+                'train_precision_at_k': train_precision_at_k,
+                'val_precision_at_k': val_precision_at_k,
+                'train_recall_at_k': train_recall_at_k,
+                'val_recall_at_k': val_recall_at_k,
                 'train_f1_score': train_f1_score,
                 'val_f1_score': val_f1_score
             }
@@ -125,13 +136,40 @@ class SimpleHorizonClassificationEmbeddings(Experiment):
             self.train_loss_history.append(avg_train_loss); self.val_loss_history.append(avg_val_loss)
             self.train_acc_history.append(avg_train_acc); self.val_acc_history.append(avg_val_acc)
             self.train_topk_acc_history.append(avg_train_topk_acc); self.val_topk_acc_history.append(avg_val_topk_acc)
-            self.train_precision_at_k_history.append(avg_train_precision_at_k); self.val_precision_at_k_history.append(avg_val_precision_at_k)
-            self.train_recall_at_k_history.append(avg_train_recall_at_k); self.val_recall_at_k_history.append(avg_val_recall_at_k)
+            self.train_precision_history.append(train_precision); self.val_precision_history.append(val_precision)
+            self.train_recall_history.append(train_recall); self.val_recall_history.append(val_recall)
+            self.train_precision_at_k_history.append(train_precision_at_k); self.val_precision_at_k_history.append(val_precision_at_k)
+            self.train_recall_at_k_history.append(train_recall_at_k); self.val_recall_at_k_history.append(val_recall_at_k)
             self.train_f1_score_history.append(train_f1_score); self.val_f1_score_history.append(val_f1_score)
 
-            logger.info(f"Total Training Cosine Loss: {avg_train_loss:.4f}, Training Acc: {avg_train_acc:.4f}, Training Top-{self.topk} Acc: {avg_train_topk_acc:.4f}, Precision@{self.topk}: {avg_train_precision_at_k:.4f}, Recall@{self.topk}: {avg_train_recall_at_k:.4f}, Training F1 Score: {train_f1_score:.4f}")
-            logger.info(f"Total Validation Cosine Loss: {avg_val_loss:.4f}, Validation Acc: {avg_val_acc:.4f}, Validation Top-{self.topk} Acc: {avg_val_topk_acc:.4f}, Precision@{self.topk}: {avg_val_precision_at_k:.4f}, Recall@{self.topk}: {avg_val_recall_at_k:.4f}, Validation F1 Score: {val_f1_score:.4f}")
-            logger.info(f"Current LR: {current_lr}")
+            logger.info(
+                f"""
+                Epoch {epoch}/{self.training_args.num_epochs} Metrics:
+                --------------------------------
+                Training:
+                - Cosine Loss: {avg_train_loss:.4f}
+                - Accuracy: {avg_train_acc:.4f}
+                - Top-{self.topk} Accuracy: {avg_train_topk_acc:.4f}
+                - Precision: {train_precision:.4f}
+                - Recall: {train_recall:.4f}
+                - Precision@{self.topk}: {train_precision_at_k:.4f}
+                - Recall@{self.topk}: {train_recall_at_k:.4f}
+                - F1 Score: {train_f1_score:.4f}
+                
+                Validation:
+                - Cosine Loss: {avg_val_loss:.4f}
+                - Accuracy: {avg_val_acc:.4f}
+                - Top-{self.topk} Accuracy: {avg_val_topk_acc:.4f}
+                - Precision: {val_precision:.4f}
+                - Recall: {val_recall:.4f}
+                - Precision@{self.topk}: {val_precision_at_k:.4f}
+                - Recall@{self.topk}: {val_recall_at_k:.4f}
+                - F1 Score: {val_f1_score:.4f}
+                
+                Current Learning Rate: {current_lr}
+                --------------------------------
+                """
+            )
             
             # Check early stopping
             if self.training_args.use_early_stopping:
@@ -139,7 +177,6 @@ class SimpleHorizonClassificationEmbeddings(Experiment):
                 if early_stopping.should_stop:
                     logger.info("Early stopping activated.")
                     break
-        print("--------------------------------")
         
         self.trained = True
         return_metrics = {
@@ -177,19 +214,35 @@ class SimpleHorizonClassificationEmbeddings(Experiment):
         print("--------------------------------")
         # Evaluation loop
         model.eval() # Set model in evaluation mode before running inference
-        avg_test_loss, avg_test_accuracy, avg_test_topk_accuracy, avg_test_precision_at_k, avg_test_recall_at_k, test_f1_score = self._evaluate_model(test_loader, self.training_args.device, model)
+        avg_test_loss, avg_test_accuracy, avg_test_topk_accuracy, test_precision, test_recall, avg_test_precision_at_k, avg_test_recall_at_k, test_f1_score = self._evaluate_model(test_loader, self.training_args.device, model, mode='test')
         
         test_metrics = {
             'Test Cosine Loss': avg_test_loss,
             'Test Accuracy': avg_test_accuracy,
             'Test Top-5 Accuracy': avg_test_topk_accuracy,
+            'Test Precision': test_precision,
+            'Test Recall': test_recall,
             'Test Precision@5': avg_test_precision_at_k,
             'Test Recall@5': avg_test_recall_at_k,
             'Test F1 Score': test_f1_score
         }
         
-        logger.info(f"Total Test Cosine Loss: {avg_test_loss:.4f}, Test Acc: {avg_test_accuracy:.4f}, Test Top-{self.topk} Acc: {avg_test_topk_accuracy:.4f}, Precision@{self.topk}: {avg_test_precision_at_k:.4f}, Recall@{self.topk}: {avg_test_recall_at_k:.4f}, Test F1 Score: {test_f1_score:.4f}")
-        print("--------------------------------")
+        logger.info(
+                f"""
+                Test Metrics:
+                --------------------------------
+                Testing:
+                - Cosine Loss: {avg_test_loss:.4f}
+                - Accuracy: {avg_test_accuracy:.4f}
+                - Top-{self.topk} Accuracy: {avg_test_topk_accuracy:.4f}
+                - Precision: {test_precision:.4f}
+                - Recall: {test_recall:.4f}
+                - Precision@{self.topk}: {avg_test_precision_at_k:.4f}
+                - Recall@{self.topk}: {avg_test_recall_at_k:.4f}
+                - F1 Score: {test_f1_score:.4f}
+                --------------------------------
+                """
+            )
         
         return test_metrics
     
@@ -264,7 +317,12 @@ class SimpleHorizonClassificationEmbeddings(Experiment):
         plt.savefig(f'{model_output_dir}/losses_and_accuracies.png')
         if wandb_image_logging:
             wandb.log({"Losses and Accuracies": wandb.Image(figure)})
-            
+                    
+        # Plot confusion matrices
+        self._plot_confusion_matrix(labels=self.labels['train'], predictions=self.predictions['train'], possible_labels=self.possible_labels, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='train')
+        self._plot_confusion_matrix(labels=self.labels['val'], predictions=self.predictions['val'], possible_labels=self.possible_labels, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='val')
+        self._plot_confusion_matrix(labels=self.labels['test'], predictions=self.predictions['test'], possible_labels=self.possible_labels, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='test')
+    
     def _train_model(self, train_loader, device, model, optimizer):
         train_loss_total = 0.0
         train_correct = 0
@@ -317,22 +375,29 @@ class SimpleHorizonClassificationEmbeddings(Experiment):
         
         # Calculate precision@k, recall@k and F1 score
         labels = torch.cat(all_labels)
-        possible_labels = list(range(self.label_embeddings_tensor.size(0)))
         top1_predictions = torch.cat(all_topk_predictions)[:, 0]
         topk_predictions = torch.cat(all_topk_predictions)
         
-        train_precision_at_k, train_recall_at_k = precision_recall_at_k(labels, topk_predictions, all_labels=possible_labels, average=self.f1_average)
-        train_f1_score = f1_score(labels.numpy(), top1_predictions.numpy(), labels=possible_labels, average=self.f1_average, zero_division=0)
+        train_precision = precision_score(labels.numpy(), top1_predictions.numpy(), labels=self.possible_labels, average=self.f1_average, zero_division=0)
+        train_recall = recall_score(labels.numpy(), top1_predictions.numpy(), labels=self.possible_labels, average=self.f1_average, zero_division=0)
+        train_precision_at_k, train_recall_at_k = precision_recall_at_k(labels, topk_predictions, all_labels=self.possible_labels, average=self.f1_average)
+        train_f1_score = f1_score(labels.numpy(), top1_predictions.numpy(), labels=self.possible_labels, average=self.f1_average, zero_division=0)
+        
+        # Store labels and predictions for confusion matrix
+        self.labels['train'] = labels.numpy()
+        self.predictions['train'] = top1_predictions.numpy()
         
         return \
             avg_train_loss, \
             avg_train_acc, \
             avg_train_topk_acc, \
+            train_precision, \
+            train_recall, \
             train_precision_at_k, \
             train_recall_at_k, \
             train_f1_score
 
-    def _evaluate_model(self, eval_loader, device, model):
+    def _evaluate_model(self, eval_loader, device, model, mode='val'):
         eval_loss_total = 0.0
         eval_correct = 0
         eval_topk_correct = 0
@@ -378,17 +443,24 @@ class SimpleHorizonClassificationEmbeddings(Experiment):
             
             # Calculate precision@k, recall@k and F1 score
             labels = torch.cat(all_labels)
-            possible_labels = list(range(self.label_embeddings_tensor.size(0)))
             top1_predictions = torch.cat(all_topk_predictions)[:, 0]
             topk_predictions = torch.cat(all_topk_predictions)
             
-            eval_precision_at_k, eval_recall_at_k = precision_recall_at_k(labels, topk_predictions, all_labels=possible_labels, average=self.f1_average)
-            eval_f1_score = f1_score(labels.numpy(), top1_predictions.numpy(), labels=possible_labels, average=self.f1_average, zero_division=0)
+            eval_precision = precision_score(labels.numpy(), top1_predictions.numpy(), labels=self.possible_labels, average=self.f1_average, zero_division=0)
+            eval_recall = recall_score(labels.numpy(), top1_predictions.numpy(), labels=self.possible_labels, average=self.f1_average, zero_division=0)
+            eval_precision_at_k, eval_recall_at_k = precision_recall_at_k(labels, topk_predictions, all_labels=self.possible_labels, average=self.f1_average)
+            eval_f1_score = f1_score(labels.numpy(), top1_predictions.numpy(), labels=self.possible_labels, average=self.f1_average, zero_division=0)
+            
+            # Store labels and predictions for confusion matrix
+            self.labels[mode] = labels.numpy()
+            self.predictions[mode] = top1_predictions.numpy()
             
         return \
             avg_eval_loss, \
             avg_eval_acc, \
             avg_eval_topk_acc, \
+            eval_precision, \
+            eval_recall, \
             eval_precision_at_k, \
             eval_recall_at_k, \
             eval_f1_score
