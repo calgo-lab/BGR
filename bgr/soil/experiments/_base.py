@@ -9,6 +9,7 @@ import seaborn as sns
 import wandb
 from typing import TYPE_CHECKING
 import re
+import numpy as np
 
 if TYPE_CHECKING:
     from bgr.soil.training_args import TrainingArgs
@@ -66,7 +67,7 @@ class Experiment(ABC):
 
         labels = [emb_dict['ind2label'][label] for label in labels]
         predictions = [emb_dict['ind2label'][label] for label in predictions]
-        possible_labels = sorted(emb_dict['ind2label'], key=sort_by_last_capital)  # Sort using the custom key
+        possible_labels = sorted(emb_dict['ind2label'], key=sort_by_last_capital)
         
         # Compute confusion matrix
         cm = confusion_matrix(labels, predictions, labels=possible_labels, normalize='true')
@@ -81,8 +82,7 @@ class Experiment(ABC):
         ax.set_aspect('equal')
         ax.set_xlabel('Predicted Labels')
         ax.set_ylabel('True Labels')
-        accuracy = (cm.diagonal().sum() / cm.sum()) * 100
-        ax.set_title(f'Confusion Matrix {mode}\nAccuracy: {accuracy:.2f}%', fontsize=14)
+        ax.set_title(f'Confusion Matrix {mode}', fontsize=14)
         
         # Save the figure
         os.makedirs(model_output_dir, exist_ok=True)
