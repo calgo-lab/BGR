@@ -7,7 +7,7 @@ from bgr.soil.modelling.image_encoders import ResNetEncoder, HDCNNEncoder, Patch
 from bgr.soil.modelling.geotemp_encoders import GeoTemporalEncoder
 from bgr.soil.modelling.depth_markers import LSTMDepthMarkerPredictor
 from bgr.soil.modelling.tabular_predictors import MLPTabularPredictor, LSTMTabularPredictor
-from bgr.soil.modelling.horizon_embedders import HorizonEmbedder
+from bgr.soil.modelling.horizon_embedders import HorizonEmbedder, HorizonLSTMEmbedder
 
 
 class SegmentToTabular(nn.Module):
@@ -308,10 +308,12 @@ class SimpleHorizonClassifierWithEmbeddingsGeotempsMLPTabMLP(nn.Module):
         segments_tabular_output_dim=64,
         geo_temp_output_dim=64,
         patch_size=512,
-        embedding_dim=61
+        embedding_dim=61,
+        embed_horizons_linearly=True
     ):
         super(SimpleHorizonClassifierWithEmbeddingsGeotempsMLPTabMLP, self).__init__()
         
+        self.embed_horizons_linearly = embed_horizons_linearly
         self.segment_encoder = PatchCNNEncoder(patch_size=patch_size, patch_stride=patch_size, output_dim=segment_encoder_output_dim)
         self.geo_temp_encoder = GeoTemporalEncoder(geo_temp_input_dim, geo_temp_output_dim)
         
@@ -321,7 +323,11 @@ class SimpleHorizonClassifierWithEmbeddingsGeotempsMLPTabMLP(nn.Module):
             nn.ReLU()
         )
         
-        self.horizon_embedder = HorizonEmbedder(input_dim=self.segment_encoder.num_img_features + geo_temp_output_dim + segments_tabular_output_dim, output_dim=embedding_dim)
+        # Choose between the MLP and LSTM horizon embedder
+        if embed_horizons_linearly:
+            self.horizon_embedder = HorizonEmbedder(input_dim=self.segment_encoder.num_img_features + geo_temp_output_dim + segments_tabular_output_dim, output_dim=embedding_dim)
+        else:
+            self.horizon_embedder = HorizonLSTMEmbedder(input_dim=self.segment_encoder.num_img_features + geo_temp_output_dim + segments_tabular_output_dim, output_dim=embedding_dim, hidden_dim=256)
         
     def forward(self, segments, segments_tabular_features, geo_temp_features):
         batch_size, num_segments, C, H, W = segments.shape
@@ -352,12 +358,17 @@ class SimpleHorizonClassifierWithEmbeddingsGeotempsMLPTabMLP(nn.Module):
         combined_features = torch.cat([segment_features, geo_temp_features], dim=-1)
         
         # Compute the horizon embeddings
-        horizon_embeddings = self.horizon_embedder(combined_features)
-        
-        # Reshape the horizon embeddings back to the original batch and segment dimensions
-        horizon_embeddings = horizon_embeddings.view(batch_size, num_segments, -1)
+        if self.embed_horizons_linearly:
+            # Embeddings are returned one by one
+            horizon_embeddings = self.horizon_embedder(combined_features)
+            # Reshape the horizon embeddings back to the original batch and segment dimensions
+            horizon_embeddings = horizon_embeddings.view(batch_size, num_segments, -1)
+        else:
+            # Embeddings are returned all at once (for each sample)   
+            horizon_embeddings = self.horizon_embedder(combined_features, num_segments)
         
         return horizon_embeddings
+    
 class ImageTabularModel(nn.Module):
     """
     Simple baseline model that combines ViT image features with tabular features
