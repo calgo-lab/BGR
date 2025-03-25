@@ -6,6 +6,7 @@ from .simple_horizon_classification import SimpleHorizonClassification
 from .simple_horizon_classification_embed_geotmp import SimpleHorizonClassificationEmbeddingsGeotemp
 from .simple_horizon_classification_embed import SimpleHorizonClassificationEmbeddings
 from .simple_horizon_classification_lstm_embed_geotmp_mlp_tab_mlp import SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP
+from .simple_horizon_classification_lstm_geotmp_mlp_tab_mlp import SimpleHorizonClassificationWithLSTMGeotempsMLPTabMLP
 
 def get_experiment(experiment_type, training_args, target, dataprocessor) -> Experiment:    
     if experiment_type == "depth_experiment":
@@ -16,6 +17,8 @@ def get_experiment(experiment_type, training_args, target, dataprocessor) -> Exp
         return SimpleHorizonClassificationWithEmbeddingsGeotempsMLPTabMLP(training_args, target, dataprocessor)
     elif experiment_type == "simple_horizon_classification_lstm_embed_geotmp_mlp_tab_mlp":
         return SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(training_args, target, dataprocessor)
+    elif experiment_type == "simple_horizon_classification_lstm_geotmp_mlp_tab_mlp":
+        return SimpleHorizonClassificationWithLSTMGeotempsMLPTabMLP(training_args, target, dataprocessor)
     elif experiment_type == "simple_horizon_classification":
         return SimpleHorizonClassification(training_args, target, dataprocessor)
     elif experiment_type == "simple_horizon_classification_embed_geotmp":
@@ -34,6 +37,8 @@ def get_experiment_hyperparameters(experiment_type) -> dict:
         return SimpleHorizonClassificationWithEmbeddingsGeotempsMLPTabMLP.get_experiment_hyperparameters()
     elif experiment_type == "simple_horizon_classification_lstm_embed_geotmp_mlp_tab_mlp":
         return SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP.get_experiment_hyperparameters()
+    elif experiment_type == "simple_horizon_classification_lstm_geotmp_mlp_tab_mlp":
+        return SimpleHorizonClassificationWithLSTMGeotempsMLPTabMLP.get_experiment_hyperparameters()
     elif experiment_type == "simple_horizon_classification":
         return SimpleHorizonClassification.get_experiment_hyperparameters()
     elif experiment_type == "simple_horizon_classification_embed_geotmp":
