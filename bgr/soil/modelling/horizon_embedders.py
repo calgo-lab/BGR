@@ -47,27 +47,15 @@ class HorizonLSTMEmbedder(nn.Module):
         self.predictor = nn.Linear(2*hidden_dim, output_dim)
 
     def forward(self, x, num_segments):
-        #hidden_state = torch.zeros(2*self.num_lstm_layers, x.size(0), self.hidden_dim).to(x.device)
-        #cell_state   = torch.zeros(2*self.num_lstm_layers, x.size(0), self.hidden_dim).to(x.device)
-        horiz_embeddings = [] # list with all the embeddings for the horizons in the sample
 
         # Apply self.fc to each vector in x - initially (batch_size*num_segments, input_dim)
         x = self.fc(x).view(-1, num_segments, self.hidden_dim)  # Reshape back to (batch_size, num_segments, hidden_dim)
 
-        # Process with self.rnn in chunks of num_segments
-        #for i in range(0, num_segments*batch_size, num_segments):
-        #    input_chunk = x[:, i:i + num_segments, :]  # features for all segments in the current sample of the batch
-        #for _ in range(num_segments):
+        # Predict sequence out of the LSTM
+        # Note: hidden_state and cell_state are default zeros if not provided
         output, (hidden_state, cell_state) = self.rnn(x) # (batch_size, num_segments, 2*hidden_dim)
-        horiz_embeddings = self.predictor(output)  # (bacth_size, num_segments, output_dim)
-        #horiz_embeddings.append(horiz_emb)
-
-        #horiz_embeddings = torch.stack(horiz_embeddings, dim=1) # (batch_size, num_segments, output_dim)
-
-        # We are using zero vectors for padding. Round values very close to 0 to 0
-        #horiz_embeddings = torch.where(
-        #    -1e-12 < horiz_embeddings < 1e-12,
-        #    torch.full_like(horiz_embeddings, 0.0),
-        #    horiz_embeddings)
+        
+        # Predict embeddings out of sequences
+        horiz_embeddings = self.predictor(output)  # (batch_size, num_segments, output_dim)
 
         return horiz_embeddings
