@@ -283,7 +283,7 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLPHybridLoss(E
         
         complete_epochs = len(self.train_loss_history) + 1
         loss_histories = {
-            'Cosine': (self.train_loss_history, self.val_loss_history)
+            'Hybrid (Cosine/Cross-Entr.)': (self.train_loss_history, self.val_loss_history)
         }
         acc_histories = {
             'Accuracy': (self.train_acc_history, self.val_acc_history)
