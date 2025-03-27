@@ -110,6 +110,7 @@ class HorizonDataProcessor:
         df = self._filter_and_select_columns(df)
         df = self._impute_and_clean_data(df)
         df = self._process_soil_type_column(df)
+        df = self._process_soil_color_column(df)
         df = self._process_target_column(df)
         df = self._encode_and_scale_features(df)
         df = self._onehot_encode_categorical_features(df)
@@ -293,6 +294,23 @@ class HorizonDataProcessor:
         
         df['Bodenart'] = df['Bodenart'].replace(mapping_main).replace(mapping_f).replace(mapping_h).replace(mapping_rare)
         return df
+    
+    def _process_soil_color_column(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Processes the soil color column by removing the Munsell Value (Saturation).
+        
+        Args:
+            df (pd.DataFrame): DataFrame containing the horizon data.
+        
+        Returns:
+            pd.DataFrame: DataFrame with processed soil color column.
+        """
+        
+        # Some GLEY values have inconsistent Munsell notation. Fix them.
+        df['Bodenfarbe'] = df['Bodenfarbe'].str.replace(r'_/1|_/2', '', regex=True)
+        # Remove the number in front of the slash '/', only keep Chroma
+        df['Bodenfarbe'] = df['Bodenfarbe'].str.replace(r'\d+(\.\d+)?/', '', regex=True)
+        return df        
         
     def _process_target_column(self, df: pd.DataFrame) -> pd.DataFrame:
         """

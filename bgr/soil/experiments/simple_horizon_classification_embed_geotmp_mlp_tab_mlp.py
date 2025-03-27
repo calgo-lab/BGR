@@ -35,9 +35,11 @@ class SimpleHorizonClassificationWithEmbeddingsGeotempsMLPTabMLP(Experiment):
         self.dataprocessor = dataprocessor
         self.trained = False
         
-        # Without Bodenart und Bodenfarbe
+        # Tabular soil features (numerical and categorical)
         self.segments_tabular_feature_columns = ['Steine']
         self.segments_tabular_categ_feature_columns = {
+            'Bodenart': 17,
+            'Bodenfarbe': 65,
             'Karbonat' : 8,
             'Humusgehaltsklasse' : 8,
             'Durchwurzelung' : 7

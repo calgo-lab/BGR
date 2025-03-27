@@ -16,3 +16,4 @@ jupyter==1.0.0
 ipywidgets==7.6.5
 iterative-stratification==0.1.9
 wandb==0.19.8
+plotly==6.0.1
