@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModel, AutoFeatureExtractor
 from bgr.soil.utils import concat_img_geotemp_depth
-from bgr.soil.modelling.image_encoders import ResNetEncoder, HDCNNEncoder, PatchCNNEncoder
+from bgr.soil.modelling.image_encoders import ResNetEncoder, HDCNNEncoder, PatchCNNEncoder, ResNetPatchEncoder
 from bgr.soil.modelling.geotemp_encoders import GeoTemporalEncoder
 from bgr.soil.modelling.depth_markers import LSTMDepthMarkerPredictor
 from bgr.soil.modelling.tabular_predictors import MLPTabularPredictor, LSTMTabularPredictor
@@ -309,12 +309,18 @@ class SimpleHorizonClassifierWithEmbeddingsGeotempsMLPTabMLP(nn.Module):
         geo_temp_output_dim=64,
         patch_size=512,
         embedding_dim=61,
-        embed_horizons_linearly=True
+        embed_horizons_linearly=True,
+        predefined_random_patches=False
     ):
         super(SimpleHorizonClassifierWithEmbeddingsGeotempsMLPTabMLP, self).__init__()
         
         self.embed_horizons_linearly = embed_horizons_linearly
-        self.segment_encoder = PatchCNNEncoder(patch_size=patch_size, patch_stride=patch_size, output_dim=segment_encoder_output_dim)
+        self.predefined_random_patches = predefined_random_patches
+        
+        if self.predefined_random_patches:
+            self.segment_encoder = ResNetPatchEncoder(output_dim=segment_encoder_output_dim,resnet_version='18')
+        else:
+            self.segment_encoder = PatchCNNEncoder(patch_size=patch_size, patch_stride=patch_size, output_dim=segment_encoder_output_dim)
         self.geo_temp_encoder = GeoTemporalEncoder(geo_temp_input_dim, geo_temp_output_dim)
         
         # Simple tabular encoder for the segment-specific tabular features
@@ -330,13 +336,20 @@ class SimpleHorizonClassifierWithEmbeddingsGeotempsMLPTabMLP(nn.Module):
             self.horizon_embedder = HorizonLSTMEmbedder(input_dim=self.segment_encoder.num_img_features + geo_temp_output_dim + segments_tabular_output_dim, output_dim=embedding_dim, hidden_dim=256)
         
     def forward(self, segments, segments_tabular_features, geo_temp_features):
-        batch_size, num_segments, C, H, W = segments.shape
+        if self.predefined_random_patches:
+            batch_size, num_segments, num_patches, C, H, W = segments.shape
+        else:
+            batch_size, num_segments, C, H, W = segments.shape
         
         # Encode each segment individually
         segment_features_list = []
         for i in range(num_segments):
-            segment = segments[:, i, :, :, :]
-            segment_features = self.segment_encoder(segment)
+            if self.predefined_random_patches:
+                segment_patches = segments[:, i, :, :, :, :] # One additional dimension for the random patches
+                segment_features = self.segment_encoder(segment_patches)
+            else:
+                segment = segments[:, i, :, :, :]
+                segment_features = self.segment_encoder(segment)
             segment_features_list.append(segment_features)
         segment_features = torch.stack(segment_features_list, dim=1)
         

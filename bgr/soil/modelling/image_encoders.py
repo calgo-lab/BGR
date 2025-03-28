@@ -14,8 +14,39 @@ class ResNetEncoder(nn.Module):
 
     def forward(self, x):
         return self.cnn(x)
+    
+class ResNetPatchEncoder(nn.Module):
+    def __init__(self, output_dim, resnet_version='18'):
+        super(ResNetPatchEncoder, self).__init__()
+        if resnet_version == '18':
+            self.cnn = models.resnet18(pretrained=True)
+        elif resnet_version == '50':
+            self.cnn = models.resnet50(pretrained=True)
+        else:
+            raise ValueError("Unsupported ResNet version. Choose either '18' or '50'.")
+        self.output_dim = output_dim
+        self.cnn.fc = nn.Identity()
 
+    def forward(self, x):
+        # x-shape (batch_size, 1, num_patches, channels, height, width)
+        batch_size, _, num_patches, channels, height, width = x.shape
 
+        # Reshape to process each patch independently
+        x = x.view(batch_size * num_patches, channels, height, width)
+
+        # Pass through the ResNet backbone
+        features = self.cnn(x)  # Shape: (batch_size * num_patches, cnn_output_dim)
+
+        # Reshape and aggregate features
+        features = features.view(batch_size, num_patches, -1)  # Shape: (batch_size, num_patches, cnn_output_dim)
+        features = torch.mean(features, dim=1, keepdim=True)  # Shape: (batch_size, 1, cnn_output_dim)
+
+        # Optionally project to the desired output_dim
+        if features.size(-1) != self.output_dim:
+            features = nn.Linear(features.size(-1), self.output_dim)(features)
+
+        return features  # Shape: (batch_size, 1, output_dim)
+        
 class HDCNNEncoder(nn.Module):
     def __init__(self, input_channels=3, output_dim=512):
         super(HDCNNEncoder, self).__init__()
