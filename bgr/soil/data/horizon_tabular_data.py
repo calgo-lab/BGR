@@ -325,19 +325,45 @@ class HorizonDataProcessor:
         with open(self.label_embeddings_path, 'rb') as handle:
             self.embeddings_dict = pickle.load(handle)
         
+        # For HCE: create separate dict where labels made out only of main symbols are stripped of the full stop '.'
+        # Note: We will use the label indexes from the embedding dictionary instead of a new sparse one-hot encoding to ease access 
+        # to the embedding vectors during training via the original indexes from the emb_dict
         dict_mapping = {key.strip('.'): value for key, value in self.embeddings_dict['label2ind'].items()}
+        
+        # Replace '+' with '-' in the target column (see Label_Graph.ipynb)
         df[self.target] = df[self.target].str.replace('+', '-', regex=False)
-        df[self.target] = df[self.target].str.replace('°', '-', regex=False)
+        df[self.target] = df[self.target].str.replace('°', '-', regex=False) # also these, so that there is only one type of mixtures (the minus-mixture)
+        # Remove trailing numbers from the labels in the target column (they only account for how often the horizon is seen in the same picture)
         df[self.target] = df[self.target].str.replace(r'\d+$', '', regex=True)
+        
+        # Map rare labels to frequent labels via Levenshtein distance
         rare_labels_mapping = {}
         list_dict_mapping = list(dict_mapping.keys())
         for lab in df[self.target].unique():
             if lab in list_dict_mapping:
-                rare_labels_mapping[lab] = lab
+                rare_labels_mapping[lab] = lab # for applying the map later in the df, we need the identity mappings as well
             else:
                 similarities = [levenshtein_distance(lab, freq_lab) for freq_lab in list_dict_mapping]
                 best_match = list_dict_mapping[np.argmin(similarities)]
                 rare_labels_mapping[lab] = best_match
+                
+        # Correct imprecise mappings (some levenshtein results are not geologically plausible)
+        for lab in rare_labels_mapping:
+            # Skip if the label is already in graph_labels
+            if lab in dict_mapping:
+                continue
+            
+            # Get the components of mixtures or the whole label if non-mixture
+            lab_splits = lab.split('-')
+            mapped_labels = []
+            for ls in lab_splits:
+                if ls in dict_mapping:
+                    mapped_labels.append(ls)
+            # If the mixture has multiple components in the graph, assign the last component as the frequent label
+            # (Analogy German: Hausschlüssel is a Schlüssel)
+            if len(mapped_labels) > 0:
+                rare_labels_mapping[lab] = mapped_labels[-1]        
+                
         df[self.target] = df[self.target].map(rare_labels_mapping)
         df[self.target] = df[self.target].map(dict_mapping)
         df[self.target] = df[self.target].astype(int)
