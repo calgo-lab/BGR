@@ -344,9 +344,9 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment)
             wandb.log({"Losses and Accuracies": wandb.Image(figure)})
         
         # Plot confusion matrices
-        self._plot_confusion_matrix(labels=self.labels['train'], predictions=self.predictions['train'], possible_labels=self.possible_labels, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='train')
-        self._plot_confusion_matrix(labels=self.labels['val'], predictions=self.predictions['val'], possible_labels=self.possible_labels, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='val')
-        self._plot_confusion_matrix(labels=self.labels['test'], predictions=self.predictions['test'], possible_labels=self.possible_labels, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='test')
+        self._plot_confusion_matrix(labels=self.labels['train'], predictions=self.predictions['train'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='train')
+        self._plot_confusion_matrix(labels=self.labels['val'], predictions=self.predictions['val'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='val')
+        self._plot_confusion_matrix(labels=self.labels['test'], predictions=self.predictions['test'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='test')
             
     def _train_model(self, train_loader, device, model, optimizer):
         train_loss_total = 0.0
@@ -495,6 +495,5 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment)
         return {
             'segment_encoder_output_dim': 512,
             'segments_tabular_output_dim': 256,
-            'geo_temp_output_dim': 256,
-            'patch_size': 512
+            'geo_temp_output_dim': 256
         }

@@ -14,8 +14,42 @@ class ResNetEncoder(nn.Module):
 
     def forward(self, x):
         return self.cnn(x)
+    
+class ResNetPatchEncoder(nn.Module):
+    def __init__(self, output_dim, resnet_version='18'):
+        super(ResNetPatchEncoder, self).__init__()
+        if resnet_version == '18':
+            self.cnn = models.resnet18(pretrained=True)
+        elif resnet_version == '50':
+            self.cnn = models.resnet50(pretrained=True)
+        else:
+            raise ValueError("Unsupported ResNet version. Choose either '18' or '50'.")
+        self.output_dim = output_dim
+        self.num_img_features = output_dim
+        self.cnn.fc = nn.Identity()
 
+    def forward(self, x):
+        # x-shape (batch_size, num_patches, channels, height, width)
+        batch_size, num_patches, channels, height, width = x.shape
 
+        # Reshape to treat each patch as a separate sample in the batch
+        patches = x.contiguous().view(batch_size * num_patches, channels, height, width)
+
+        # Pass each patch through the ResNet backbone
+        patch_features = self.cnn(patches)  # Shape: (batch_size * num_patches, cnn_output_dim)
+
+        # Reshape back to (batch_size, num_patches, cnn_output_dim)
+        patch_features = patch_features.view(batch_size, num_patches, -1)
+
+        # Aggregate features across patches
+        aggregated_features = torch.mean(patch_features, dim=1)  # Shape: (batch_size, cnn_output_dim)
+
+        # Optionally project to the desired output_dim
+        if aggregated_features.size(-1) != self.output_dim:
+            aggregated_features = nn.Linear(aggregated_features.size(-1), self.output_dim)(aggregated_features)
+
+        return aggregated_features  # Shape: (batch_size, output_dim)
+        
 class HDCNNEncoder(nn.Module):
     def __init__(self, input_channels=3, output_dim=512):
         super(HDCNNEncoder, self).__init__()

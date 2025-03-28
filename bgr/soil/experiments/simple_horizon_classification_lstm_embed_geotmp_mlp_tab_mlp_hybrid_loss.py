@@ -19,23 +19,35 @@ if TYPE_CHECKING:
 
 from bgr.soil.data.horizon_tabular_data import HorizonDataProcessor
 from bgr.soil.experiments import Experiment
-from bgr.soil.modelling.general_models import SimpleHorizonClassifierWithEmbeddingsGeotemps
+from bgr.soil.modelling.general_models import SimpleHorizonClassifierWithEmbeddingsGeotempsMLPTabMLP
 from bgr.soil.metrics import TopKHorizonAccuracy, precision_recall_at_k
 from bgr.soil.data.datasets import SegmentsTabularDataset
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class SimpleHorizonClassificationEmbeddingsGeotemp(Experiment):
+class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLPHybridLoss(Experiment):
     def __init__(self, training_args: 'TrainingArgs', target: str, dataprocessor: HorizonDataProcessor):
         self.training_args = training_args
         self.target = target
         self.dataprocessor = dataprocessor
         self.trained = False
         
+        # Without Bodenart und Bodenfarbe
+        self.segments_tabular_feature_columns = ['Steine']
+        self.segments_tabular_categ_feature_columns = {
+            'Bodenart': 17,
+            'Bodenfarbe': 65,
+            'Karbonat' : 8,
+            'Humusgehaltsklasse' : 8,
+            'Durchwurzelung' : 7
+        }
+        
         self.label_embeddings_tensor = torch.tensor(self.dataprocessor.embeddings_dict['embedding'], device=self.training_args.device).float()
         self.cosine_loss = nn.CosineEmbeddingLoss()
+        self.cross_entropy_loss = nn.CrossEntropyLoss()
         self.topk = 5
         self.horizon_topk_acc = lambda k : TopKHorizonAccuracy(self.label_embeddings_tensor, k=k)
         self.f1_average = 'macro'
@@ -45,9 +57,10 @@ class SimpleHorizonClassificationEmbeddingsGeotemp(Experiment):
         ])
         
         # Retrieve the experiment hyperparameters
-        self.hyperparameters = SimpleHorizonClassificationEmbeddingsGeotemp.get_experiment_hyperparameters()
-        self.hyperparameters.update(training_args.hyperparameters)
-        
+        defaults = SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLPHybridLoss.get_experiment_hyperparameters()
+        for key in defaults:
+            setattr(self, key, self.training_args.hyperparameters.get(key, defaults[key]))
+            
         # Initialize the labels and predictions dictionaries for confusion matrix
         self.possible_labels = list(range(self.label_embeddings_tensor.size(0)))
         self.labels = {'train': None, 'val': None, 'test': None}
@@ -63,7 +76,9 @@ class SimpleHorizonClassificationEmbeddingsGeotemp(Experiment):
             dataframe=train_df,
             normalize=self.image_normalization,
             label_column=self.target,
-            feature_columns=self.dataprocessor.geotemp_img_infos[:-1] # without 'file'
+            feature_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
+            segments_tab_num_feature_columns=self.segments_tabular_feature_columns,
+            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns
         )
         train_loader = DataLoader(train_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
@@ -71,7 +86,9 @@ class SimpleHorizonClassificationEmbeddingsGeotemp(Experiment):
             dataframe=val_df,
             normalize=self.image_normalization,
             label_column=self.target,
-            feature_columns=self.dataprocessor.geotemp_img_infos[:-1] # without 'file'
+            feature_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
+            segments_tab_num_feature_columns=self.segments_tabular_feature_columns,
+            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns
         )
         val_loader = DataLoader(val_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
@@ -149,7 +166,7 @@ class SimpleHorizonClassificationEmbeddingsGeotemp(Experiment):
                 Epoch {epoch}/{self.training_args.num_epochs} Metrics:
                 --------------------------------
                 Training:
-                - Cosine Loss: {avg_train_loss:.4f}
+                - Hybrid Loss (Cross-Entr./Cosine): {avg_train_loss:.4f}
                 - Accuracy: {avg_train_acc:.4f}
                 - Top-{self.topk} Accuracy: {avg_train_topk_acc:.4f}
                 - Precision: {train_precision:.4f}
@@ -159,7 +176,7 @@ class SimpleHorizonClassificationEmbeddingsGeotemp(Experiment):
                 - F1 Score: {train_f1_score:.4f}
                 
                 Validation:
-                - Cosine Loss: {avg_val_loss:.4f}
+                - Hybrid Loss (Cross-Entr./Cosine): {avg_val_loss:.4f}
                 - Accuracy: {avg_val_acc:.4f}
                 - Top-{self.topk} Accuracy: {avg_val_topk_acc:.4f}
                 - Precision: {val_precision:.4f}
@@ -182,8 +199,8 @@ class SimpleHorizonClassificationEmbeddingsGeotemp(Experiment):
         
         self.trained = True
         return_metrics = {
-            'Train Cosine Loss' : self.train_loss_history[-1],
-            'Validation Cosine Loss' : self.val_loss_history[-1],
+            'Train Hybrid Loss' : self.train_loss_history[-1],
+            'Validation Hybrid Loss' : self.val_loss_history[-1],
             'Train Accuracy' : self.train_acc_history[-1],
             'Validation Accuracy' : self.val_acc_history[-1],
             'Train Top-5 Accuracy' : self.train_topk_acc_history[-1],
@@ -208,7 +225,9 @@ class SimpleHorizonClassificationEmbeddingsGeotemp(Experiment):
             dataframe=test_df,
             normalize=self.image_normalization,
             label_column=self.target,
-            feature_columns=self.dataprocessor.geotemp_img_infos[:-1] # without 'file'
+            feature_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
+            segments_tab_num_feature_columns=self.segments_tabular_feature_columns,
+            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns
         )
         test_loader = DataLoader(test_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
@@ -220,7 +239,7 @@ class SimpleHorizonClassificationEmbeddingsGeotemp(Experiment):
         avg_test_loss, avg_test_accuracy, avg_test_topk_accuracy, test_precision, test_recall, avg_test_precision_at_k, avg_test_recall_at_k, test_f1_score = self._evaluate_model(test_loader, self.training_args.device, model, mode='test')
         
         test_metrics = {
-            'Test Cosine Loss': avg_test_loss,
+            'Test Hybrid Loss': avg_test_loss,
             'Test Accuracy': avg_test_accuracy,
             'Test Top-5 Accuracy': avg_test_topk_accuracy,
             'Test Precision': test_precision,
@@ -235,7 +254,7 @@ class SimpleHorizonClassificationEmbeddingsGeotemp(Experiment):
                 Test Metrics:
                 --------------------------------
                 Testing:
-                - Cosine Loss: {avg_test_loss:.4f}
+                - Hybrid Loss (Cross-Entr./Cosine): {avg_test_loss:.4f}
                 - Accuracy: {avg_test_accuracy:.4f}
                 - Top-{self.topk} Accuracy: {avg_test_topk_accuracy:.4f}
                 - Precision: {test_precision:.4f}
@@ -250,11 +269,14 @@ class SimpleHorizonClassificationEmbeddingsGeotemp(Experiment):
         return test_metrics
     
     def get_model(self) -> nn.Module:
-        return SimpleHorizonClassifierWithEmbeddingsGeotemps(
+        return SimpleHorizonClassifierWithEmbeddingsGeotempsMLPTabMLP(
             geo_temp_input_dim=len(self.dataprocessor.geotemp_img_infos) - 2, # without index and img path
-            segment_encoder_output_dim=self.hyperparameters['segment_encoder_output_dim'],
-            patch_size=self.hyperparameters['patch_size'],
-            embedding_dim=np.shape(self.dataprocessor.embeddings_dict['embedding'])[1]
+            segments_tabular_input_dim=len(self.segments_tabular_feature_columns) + sum(self.segments_tabular_categ_feature_columns.values()),
+            segment_encoder_output_dim=self.segment_encoder_output_dim,
+            segments_tabular_output_dim=self.segments_tabular_output_dim,
+            geo_temp_output_dim=self.geo_temp_output_dim,
+            embedding_dim=np.shape(self.dataprocessor.embeddings_dict['embedding'])[1],
+            embed_horizons_linearly=False
         )
     
     def plot_losses(self, model_output_dir: str, wandb_image_logging: bool) -> None:
@@ -263,7 +285,7 @@ class SimpleHorizonClassificationEmbeddingsGeotemp(Experiment):
         
         complete_epochs = len(self.train_loss_history) + 1
         loss_histories = {
-            'Cosine': (self.train_loss_history, self.val_loss_history)
+            'Hybrid (Cosine/Cross-Entr.)': (self.train_loss_history, self.val_loss_history)
         }
         acc_histories = {
             'Accuracy': (self.train_acc_history, self.val_acc_history)
@@ -337,18 +359,19 @@ class SimpleHorizonClassificationEmbeddingsGeotemp(Experiment):
         
         train_loader_tqdm = tqdm(train_loader, desc="Training", leave=False)
         for batch in train_loader_tqdm:
-            segments, geotemp_features, padded_true_horizon_indices = batch
-            segments, geotemp_features, padded_true_horizon_indices = segments.to(device), geotemp_features.to(device), padded_true_horizon_indices.to(device)
+            segments, segments_tabular_features, geotemp_features, padded_true_horizon_indices = batch
+            segments, segments_tabular_features, geotemp_features, padded_true_horizon_indices = segments.to(device), segments_tabular_features.to(device), geotemp_features.to(device), padded_true_horizon_indices.to(device)
 
             optimizer.zero_grad() # otherwise, PyTorch accumulates the gradients during backprop
 
             # Predict depth markers (as padded tensors)
-            padded_pred_horizon_embeddings = model(segments=segments, geo_temp_features=geotemp_features[:, 1:]) # 'index' column not used in model
+            padded_pred_horizon_embeddings = model(segments=segments, segments_tabular_features=segments_tabular_features, geo_temp_features=geotemp_features[:, 1:]) # 'index' column not used in model
                 
             true_horizon_embeddings = torch.stack([torch.tensor(self.dataprocessor.embeddings_dict['embedding'][lab.item()]) for lab in padded_true_horizon_indices.view(-1) if lab != -1]).to(device)
             pred_horizon_embeddings = torch.stack([pred for pred, lab in zip(padded_pred_horizon_embeddings.view(-1, padded_pred_horizon_embeddings.size(-1)), padded_true_horizon_indices.view(-1)) if lab != -1]).to(device)
             true_horizon_indices = padded_true_horizon_indices.view(-1)[padded_true_horizon_indices.view(-1) != -1]
-            pred_topk_horizon_indices = torch.topk(torch.matmul(pred_horizon_embeddings, self.label_embeddings_tensor.T), k=self.topk, dim=1).indices
+            pred_logits = torch.matmul(pred_horizon_embeddings, self.label_embeddings_tensor.T)
+            pred_topk_horizon_indices = torch.topk(pred_logits, k=self.topk, dim=1).indices
                 
             # Normalize embeddings for the cosine loss, true embeddings are already normalized
             pred_horizon_embeddings = F.normalize(pred_horizon_embeddings, p=2, dim=1)
@@ -356,7 +379,13 @@ class SimpleHorizonClassificationEmbeddingsGeotemp(Experiment):
             # Compute individual losses, then sum them together for backprop
             # Create a dummy "same class" tensor with 1s for the cosine similarity
             same_class = torch.ones(pred_horizon_embeddings.size(0)).to(device)
-            train_loss = self.cosine_loss(pred_horizon_embeddings, true_horizon_embeddings, same_class)
+            
+            # Compute Hybrid loss
+            cosine_loss = self.cosine_loss(pred_horizon_embeddings, true_horizon_embeddings, same_class)
+            cross_entropy_loss = self.cross_entropy_loss(pred_logits, true_horizon_indices)
+            cosine_weight, cross_entr_weight = self.loss_weights
+            train_loss = (cosine_weight * cosine_loss) + (cross_entr_weight * cross_entropy_loss)
+            
             train_loss.backward()
             clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
@@ -366,7 +395,7 @@ class SimpleHorizonClassificationEmbeddingsGeotemp(Experiment):
             train_correct += self.horizon_topk_acc(1)(pred_horizon_embeddings, true_horizon_indices)
             train_topk_correct += self.horizon_topk_acc(self.topk)(pred_horizon_embeddings, true_horizon_indices)
             
-            # Append predictions and labels for F1 score
+            # Append topk predictions and labels for Precision@k, Recall@k and F1 score
             all_topk_predictions.append(pred_topk_horizon_indices.cpu())
             all_labels.append(true_horizon_indices.cpu())
 
@@ -412,31 +441,37 @@ class SimpleHorizonClassificationEmbeddingsGeotemp(Experiment):
         eval_loader_tqdm = tqdm(eval_loader, desc="Evaluating", leave=False)
         with torch.no_grad():
             for batch in eval_loader_tqdm:
-                segments, geotemp_features, padded_true_horizon_indices = batch
-                segments, geotemp_features, padded_true_horizon_indices = segments.to(device), geotemp_features.to(device), padded_true_horizon_indices.to(device)
+                segments, segments_tabular_features, geotemp_features, padded_true_horizon_indices = batch
+                segments, segments_tabular_features, geotemp_features, padded_true_horizon_indices = segments.to(device), segments_tabular_features.to(device), geotemp_features.to(device), padded_true_horizon_indices.to(device)
 
                 # Predict depth markers (as padded tensors)
-                padded_pred_horizon_embeddings = model(segments=segments, geo_temp_features=geotemp_features[:, 1:]) # 'index' column not used in model
+                padded_pred_horizon_embeddings = model(segments=segments, segments_tabular_features=segments_tabular_features, geo_temp_features=geotemp_features[:, 1:]) # 'index' column not used in model
                     
                 true_horizon_embeddings = torch.stack([torch.tensor(self.dataprocessor.embeddings_dict['embedding'][lab.item()]) for lab in padded_true_horizon_indices.view(-1) if lab != -1]).to(device)
                 pred_horizon_embeddings = torch.stack([pred for pred, lab in zip(padded_pred_horizon_embeddings.view(-1, padded_pred_horizon_embeddings.size(-1)), padded_true_horizon_indices.view(-1)) if lab != -1]).to(device)
                 true_horizon_indices = padded_true_horizon_indices.view(-1)[padded_true_horizon_indices.view(-1) != -1]
-                pred_topk_horizon_indices = torch.topk(torch.matmul(pred_horizon_embeddings, self.label_embeddings_tensor.T), k=self.topk, dim=1).indices
-                    
+                pred_logits = torch.matmul(pred_horizon_embeddings, self.label_embeddings_tensor.T)
+                pred_topk_horizon_indices = torch.topk(pred_logits, k=self.topk, dim=1).indices
+                
                 # Normalize embeddings for the cosine loss, true embeddings are already normalized
                 pred_horizon_embeddings = F.normalize(pred_horizon_embeddings, p=2, dim=1)
                     
                 # Compute batch losses
                 # Create a dummy "same class" tensor with 1s for the cosine similarity
                 same_class = torch.ones(pred_horizon_embeddings.size(0)).to(device)
-                val_loss = self.cosine_loss(pred_horizon_embeddings, true_horizon_embeddings, same_class)
+                
+                # Compute Hybrid loss
+                cosine_loss = self.cosine_loss(pred_horizon_embeddings, true_horizon_embeddings, same_class)
+                cross_entropy_loss = self.cross_entropy_loss(pred_logits, true_horizon_indices)
+                cosine_weight, cross_entr_weight = self.loss_weights
+                val_loss = (cosine_weight * cosine_loss) + (cross_entr_weight * cross_entropy_loss)
 
                 # Add batch losses to total loss
                 eval_loss_total += val_loss.item()
                 eval_correct += self.horizon_topk_acc(1)(pred_horizon_embeddings, true_horizon_indices)
                 eval_topk_correct += self.horizon_topk_acc(self.topk)(pred_horizon_embeddings, true_horizon_indices)
                 
-                # Append predictions and labels for F1 score
+                # Append topk predictions and labels for Precision@k, Recall@k and F1 score
                 all_topk_predictions.append(pred_topk_horizon_indices.cpu())
                 all_labels.append(true_horizon_indices.cpu())
             
@@ -472,6 +507,8 @@ class SimpleHorizonClassificationEmbeddingsGeotemp(Experiment):
     @staticmethod
     def get_experiment_hyperparameters():
         return {
-            'segment_encoder_output_dim' : 512,
-            'patch_size' : 512
+            'loss_weights' : [1/0.3, 1/2], # Weights for Cosine, Cross-Entropy according to last validation losses
+            'segment_encoder_output_dim': 512,
+            'segments_tabular_output_dim': 256,
+            'geo_temp_output_dim': 256
         }
