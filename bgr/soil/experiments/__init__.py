@@ -8,6 +8,8 @@ from .simple_horizon_classification_embed import SimpleHorizonClassificationEmbe
 from .simple_horizon_classification_lstm_embed_geotmp_mlp_tab_mlp import SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP
 from .simple_horizon_classification_lstm_geotmp_mlp_tab_mlp import SimpleHorizonClassificationWithLSTMGeotempsMLPTabMLP
 from .simple_horizon_classification_lstm_embed_geotmp_mlp_tab_mlp_hybrid_loss import SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLPHybridLoss
+from .simple_horizon_classification_lstm_geotmp_mlp_tab_mlp_resnet import SimpleHorizonClassificationWithLSTMGeotempsMLPTabMLPResNet
+from .simple_horizon_classification_lstm_embed_geotmp_mlp_tab_mlp_resnet import SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLPResNet
 
 def get_experiment(experiment_type, training_args, target, dataprocessor) -> Experiment:    
     if experiment_type == "depth_experiment":
@@ -28,6 +30,10 @@ def get_experiment(experiment_type, training_args, target, dataprocessor) -> Exp
         return SimpleHorizonClassificationEmbeddingsGeotemp(training_args, target, dataprocessor)
     elif experiment_type == "simple_horizon_classification_embed":
         return SimpleHorizonClassificationEmbeddings(training_args, target, dataprocessor)
+    elif experiment_type == "simple_horizon_classification_lstm_geotmp_mlp_tab_mlp_resnet":
+        return SimpleHorizonClassificationWithLSTMGeotempsMLPTabMLPResNet(training_args, target, dataprocessor)
+    elif experiment_type == "simple_horizon_classification_lstm_embed_geotmp_mlp_tab_mlp_resnet":
+        return SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLPResNet(training_args, target, dataprocessor)
     else:
         raise ValueError(f"Unknown experiment type: {experiment_type}")
     
@@ -50,5 +56,9 @@ def get_experiment_hyperparameters(experiment_type) -> dict:
         return SimpleHorizonClassificationEmbeddingsGeotemp.get_experiment_hyperparameters()
     elif experiment_type == "simple_horizon_classification_embed":
         return SimpleHorizonClassificationEmbeddings.get_experiment_hyperparameters()
+    elif experiment_type == "simple_horizon_classification_lstm_geotmp_mlp_tab_mlp_resnet":
+        return SimpleHorizonClassificationWithLSTMGeotempsMLPTabMLPResNet.get_experiment_hyperparameters()
+    elif experiment_type == "simple_horizon_classification_lstm_embed_geotmp_mlp_tab_mlp_resnet":
+        return SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLPResNet.get_experiment_hyperparameters()
     else:
         raise ValueError(f"Unknown experiment type: {experiment_type}")

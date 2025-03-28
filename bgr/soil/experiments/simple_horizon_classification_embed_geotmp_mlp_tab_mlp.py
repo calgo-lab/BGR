@@ -494,6 +494,5 @@ class SimpleHorizonClassificationWithEmbeddingsGeotempsMLPTabMLP(Experiment):
         return {
             'segment_encoder_output_dim': 512,
             'segments_tabular_output_dim': 256,
-            'geo_temp_output_dim': 256,
-            'patch_size': 512
+            'geo_temp_output_dim': 256
         }

@@ -21,14 +21,14 @@ from bgr.soil.data.horizon_tabular_data import HorizonDataProcessor
 from bgr.soil.experiments import Experiment
 from bgr.soil.modelling.general_models import SimpleHorizonClassifierWithEmbeddingsGeotempsMLPTabMLP
 from bgr.soil.metrics import TopKHorizonAccuracy, precision_recall_at_k
-from bgr.soil.data.datasets import SegmentsTabularDataset
+from bgr.soil.data.datasets import SegmentPatchesTabularDataset
 
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment):
+class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLPResNet(Experiment):
     def __init__(self, training_args: 'TrainingArgs', target: str, dataprocessor: HorizonDataProcessor):
         self.training_args = training_args
         self.target = target
@@ -56,7 +56,7 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment)
         ])
         
         # Retrieve the experiment hyperparameters
-        defaults = SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP.get_experiment_hyperparameters()
+        defaults = SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLPResNet.get_experiment_hyperparameters()
         for key in defaults:
             setattr(self, key, self.training_args.hyperparameters.get(key, defaults[key]))
             
@@ -71,23 +71,25 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment)
         model_output_dir: str
     ) -> tuple[nn.Module, dict]:
         
-        train_dataset = SegmentsTabularDataset(
+        train_dataset = SegmentPatchesTabularDataset(
             dataframe=train_df,
             normalize=self.image_normalization,
             label_column=self.target,
             feature_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
             segments_tab_num_feature_columns=self.segments_tabular_feature_columns,
-            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns
+            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns,
+            segment_patch_number=self.num_segment_patches
         )
         train_loader = DataLoader(train_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
-        val_dataset = SegmentsTabularDataset(
+        val_dataset = SegmentPatchesTabularDataset(
             dataframe=val_df,
             normalize=self.image_normalization,
             label_column=self.target,
             feature_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
             segments_tab_num_feature_columns=self.segments_tabular_feature_columns,
-            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns
+            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns,
+            segment_patch_number=self.num_segment_patches
         )
         val_loader = DataLoader(val_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
@@ -220,13 +222,14 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment)
         model_output_dir: str
     ) -> dict:
         
-        test_dataset = SegmentsTabularDataset(
+        test_dataset = SegmentPatchesTabularDataset(
             dataframe=test_df,
             normalize=self.image_normalization,
             label_column=self.target,
             feature_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
             segments_tab_num_feature_columns=self.segments_tabular_feature_columns,
-            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns
+            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns,
+            segment_patch_number=self.num_segment_patches
         )
         test_loader = DataLoader(test_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
@@ -275,7 +278,8 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment)
             segments_tabular_output_dim=self.segments_tabular_output_dim,
             geo_temp_output_dim=self.geo_temp_output_dim,
             embedding_dim=np.shape(self.dataprocessor.embeddings_dict['embedding'])[1],
-            embed_horizons_linearly=False
+            embed_horizons_linearly=False,
+            predefined_random_patches=True
         )
     
     def plot_losses(self, model_output_dir: str, wandb_image_logging: bool) -> None:
@@ -493,6 +497,7 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment)
     @staticmethod
     def get_experiment_hyperparameters():
         return {
+            'num_segment_patches': 48,
             'segment_encoder_output_dim': 512,
             'segments_tabular_output_dim': 256,
             'geo_temp_output_dim': 256

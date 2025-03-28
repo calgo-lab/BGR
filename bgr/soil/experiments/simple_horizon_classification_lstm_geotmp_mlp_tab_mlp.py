@@ -38,6 +38,8 @@ class SimpleHorizonClassificationWithLSTMGeotempsMLPTabMLP(Experiment):
         # Without Bodenart und Bodenfarbe
         self.segments_tabular_feature_columns = ['Steine']
         self.segments_tabular_categ_feature_columns = {
+            'Bodenart': 17,
+            'Bodenfarbe': 65,
             'Karbonat' : 8,
             'Humusgehaltsklasse' : 8,
             'Durchwurzelung' : 7
@@ -486,6 +488,5 @@ class SimpleHorizonClassificationWithLSTMGeotempsMLPTabMLP(Experiment):
         return {
             'segment_encoder_output_dim': 512,
             'segments_tabular_output_dim': 256,
-            'geo_temp_output_dim': 256,
-            'patch_size': 512
+            'geo_temp_output_dim': 256
         }

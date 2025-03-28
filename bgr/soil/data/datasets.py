@@ -244,7 +244,7 @@ class SegmentPatchesTabularDataset(Dataset):
         self,
         dataframe,
         segment_patch_size=(224, 224),
-        segment_patch_number=64,
+        segment_patch_number=48,
         normalize=None,
         path_column : str ='file',
         depth_column : str ='Untergrenze',
@@ -412,7 +412,7 @@ class SegmentPatchesTabularDataset(Dataset):
         for _ in range(self.segment_patch_number):
             # Randomly crop a patch
             patch = random_crop(segment)
-            self.normalize(patch)
+            patch = self.normalize(patch)
             patches.append(patch)
             
         # Restore the original RNG state
