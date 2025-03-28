@@ -55,8 +55,8 @@ class HorizonDataProcessor:
             'Moormaechtigkeit', 'Torfmaechtigkeit', 'Neigung', 'Exposition', 'Woelbung', 
             'Reliefformtyp', 'LageImRelief', 'KV_0_30', 'KV_30_100', 'file'
         ]
-        # For now, leave out Bodenart and Bodenfarbe. Also, we don't need to stratify wrt stones (it's numerical)
-        self.stratified_split_targets = ['Karbonat', 'Humusgehaltsklasse', 'Durchwurzelung', 'Horizontsymbol_relevant']
+        # Note: we don't need to stratify wrt stones (it's numerical)
+        self.stratified_split_targets = ['Bodenart', 'Bodenfarbe', 'Karbonat', 'Humusgehaltsklasse', 'Durchwurzelung', 'Horizontsymbol_relevant']
         self.embeddings_dict = None
         
     @staticmethod
@@ -109,6 +109,8 @@ class HorizonDataProcessor:
         df = self._merge_geographical_data(df)
         df = self._filter_and_select_columns(df)
         df = self._impute_and_clean_data(df)
+        df = self._process_soil_type_column(df)
+        df = self._process_soil_color_column(df)
         df = self._process_target_column(df)
         df = self._encode_and_scale_features(df)
         df = self._onehot_encode_categorical_features(df)
@@ -161,7 +163,7 @@ class HorizonDataProcessor:
             pd.DataFrame: Preprocessed horizon data.
         """
         df = pd.read_csv(os.path.join(self.data_folder_path, FILE_NAME))
-        df = df.dropna(subset=['Horizontsymbol'])
+        df = df.dropna(subset=['Horizontsymbol']) # There is one useless row full of NaNs
         df_simple = pd.read_csv(os.path.join(self.data_folder_path, SIMPLIFIED_SYMBOL_FILE_NAME))
         df_simple.rename(
             columns={"relevanter Anteil = was sinntragend und detektierbar ist - es sind nicht alles gültige Symbole": "relevanter Anteil"}, 
@@ -253,6 +255,63 @@ class HorizonDataProcessor:
         df['Hauptbodentyp'] = df['Hauptbodentyp'].str[:2]
         return df
 
+    def _process_soil_type_column(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Processes the soil type column by simplifying the labels according to the rules in the book (pages 142-159).
+        
+        Args:
+            df (pd.DataFrame): DataFrame containing the horizon data.
+        
+        Returns:
+            pd.DataFrame: DataFrame with processed soil type column.
+        """
+        # Summarize the main soil types
+        mapping_main = {"Uls": "lu", "Ss": "ss", "fSgs": "ss", "fS": "ss", "fSms": "ss", "mSfs": "ss", 
+                        "mS": "ss", "mSgs": "ss", "gS": "ss", "Su2": "ls", "Su3": "us", "Su4": "us", 
+                        "Slu": "sl", "Sl2": "ls", "Sl3": "ls", "Sl4": "sl", "St2": "ls", "St3": "sl", 
+                        "Uu": "su", "Us": "su", "Ut2": "lu", "Ut3": "lu", "Ut4": "tu", "Ls2": "ll", 
+                        "Ls3": "ll", "Ls4": "ll", "Lu": "tu", "Lt2": "ll", "Lt3": "ut", "Lts": "tl", 
+                        "Ts2": "lt", "Ts3": "tl", "Ts4": "tl", "Tu4": "ut", "Tu3": "ut", "Tu2": "lt", 
+                        "Tl": "lt", "Tt": "lt", "fSu2": "ls", "fSu3": "us", "fSu4": "us", "fSlu": "sl", 
+                        "fSl2": "ls", "fSl3": "ls", "fSl4": "sl", "fSt2": "ls", "fSt3": "sl", "mSu2": "ls", 
+                        "mSu3": "us", "mSu4": "us", "mSlu": "sl", "mSl2": "ls", "mSl3": "ls", "mSl4": "sl", 
+                        "mSt2": "ls", "mSt3": "sl", "gSu2": "ls", "gSu3": "us", "gSu4": "us", "gSlu": "sl", 
+                        "gSl2": "ls", "gSl3": "ls", "gSl4": "sl", "gSt2": "ls", "gSt3": "sl"}
+        
+        # Summarize the F-class
+        mapping_f = {"Fmt": "Fm", "Fmu": "Fm", "Fm": "Fm", "Fms": "Fm", "Fh": "Fh", 
+                     "Fhl": "Fh", "Fhh": "Fh", "Fhg": "Fh", "F": "F", "Fmk": "Fm", "Fmi": "Fm"}
+        
+        # Summarize the H-class
+        mapping_h = {"H": "H", "Ha": "Ha", "Hh": "Hh", "Hha": "Hh", "Hhe": "Hh", "Hhi": "Hh", 
+                     "Hhk": "Hh", "Hhs": "Hh", "Hhsa": "Hh", "Hhsu": "Hh", "Hhsy": "Hh", "Hn": "Hn", 
+                     "Hnb": "Hn", "Hnd": "Hn", "Hnle": "Hn", "Hnmy": "Hn", "Hnp": "Hn", "Hnq": "Hn", 
+                     "Hnr": "Hn", "Hu": "Hu", "Hulb": "Hu", "Hulk": "Hu"}
+        
+        # Summarize rare soil types (classified according to extra finer grained rules)
+        # Rule: replace them with the soil type in the horizon above them. They are thin and at the bottom anyway.
+        mapping_rare = {'k': 'ls', 'z': 'll', 'v': 'tl'}
+        
+        df['Bodenart'] = df['Bodenart'].replace(mapping_main).replace(mapping_f).replace(mapping_h).replace(mapping_rare)
+        return df
+    
+    def _process_soil_color_column(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Processes the soil color column by removing the Munsell Value (Saturation).
+        
+        Args:
+            df (pd.DataFrame): DataFrame containing the horizon data.
+        
+        Returns:
+            pd.DataFrame: DataFrame with processed soil color column.
+        """
+        
+        # Some GLEY values have inconsistent Munsell notation. Fix them.
+        df['Bodenfarbe'] = df['Bodenfarbe'].str.replace(r'_/1|_/2', '', regex=True)
+        # Remove the number in front of the slash '/', only keep Chroma
+        df['Bodenfarbe'] = df['Bodenfarbe'].str.replace(r'\d+(\.\d+)?/', '', regex=True)
+        return df        
+        
     def _process_target_column(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Processes the target column by mapping rare labels to frequent ones and encoding them.
