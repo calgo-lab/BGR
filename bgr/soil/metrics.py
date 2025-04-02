@@ -75,16 +75,14 @@ class TopKLoss(nn.Module):
 
 
 class ShortestPathLoss(nn.Module):
-    """Computes a top-k shortest path loss based on the number of edges needed to traverse in the graph to reach the least common ancestor of two terminal nodes."""
-    def __init__(self, path_lengths_dict, k=5):
+    """Computes a shortest path loss based on the number of edges needed to traverse in the graph to reach the least common ancestor of two terminal nodes."""
+    def __init__(self, path_lengths_dict):
         """
         Args:
             path_lengths_dict (dict): A dictionary where keys are tuples of node index pairs and values are the lengths of the paths between them.
-            k (int): The number of top predictions to consider.
         """
         super(ShortestPathLoss, self).__init__()
         self.path_lengths_dict = path_lengths_dict
-        self.k = k
 
     def forward(self, predicted_logits, true_labels):
         """
@@ -93,36 +91,26 @@ class ShortestPathLoss(nn.Module):
             true_labels (torch.Tensor): The true labels as integers (batch_size,).
 
         Returns:
-            loss (float): The average shortest path length over the top-k predictions.
+            loss (float): The average shortest path length over the batch.
         """
-        # Get the top-k predicted indices
-        #top_k_indices = torch.topk(predicted_logits, self.k, dim=1).indices  # (batch_size, k)
-        top_k_indices = torch.topk(predicted_logits, predicted_logits.size(1), dim=1).indices
+        # Get the top-1 predicted index
+        top_1_indices = torch.argmax(predicted_logits, dim=1)  # (batch_size,)
 
         # Initialize total path length as a tensor with requires_grad=True
         total_path_length = torch.zeros(1, device=predicted_logits.device, requires_grad=True)
 
-        weights = torch.tensor(
-            [1.0 / (i + 1) for i in range(predicted_logits.size(1))],
-            device=predicted_logits.device,
-            dtype=torch.float
-        )
-
-        # Iterate through true labels and top-k predictions
-        for true, top_k in zip(true_labels, top_k_indices):
-            # Compute the shortest path length for each of the top-k predictions
-            path_lengths = torch.stack([
-                torch.tensor(
-                    self.path_lengths_dict.get((true.item(), pred.item())) or 
-                    self.path_lengths_dict.get((pred.item(), true.item())),
-                    device=predicted_logits.device,
-                    dtype=torch.float
-                )
-                for pred in top_k
-            ])
+        # Iterate through true labels and top-1 predictions
+        for true, pred in zip(true_labels, top_1_indices):
+            # Compute the shortest path length between the true label and the predicted label
+            path_length = torch.tensor(
+                self.path_lengths_dict.get((true.item(), pred.item())) or 
+                self.path_lengths_dict.get((pred.item(), true.item())),
+                device=predicted_logits.device,
+                dtype=torch.float
+            )
             
-            # Use the weighted mean of path lengths among the top-k predictions
-            total_path_length = total_path_length + torch.sum(path_lengths * weights)
+            # Accumulate the path length
+            total_path_length = total_path_length + path_length
 
         # Compute the average path length over the batch
         loss = total_path_length / predicted_logits.size(0)

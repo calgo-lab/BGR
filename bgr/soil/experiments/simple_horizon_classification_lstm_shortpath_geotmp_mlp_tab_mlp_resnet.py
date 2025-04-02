@@ -47,6 +47,7 @@ class SimpleHorizonClassificationWithLSTMShortPathGeotempsMLPTabMLPResNet(Experi
         
         self.num_classes = len(self.dataprocessor.embeddings_dict['embedding'])
         self.short_path_loss = ShortestPathLoss(path_lengths_dict=self.dataprocessor.embeddings_dict['path_lengths'])
+        self.cross_entropy_loss = nn.CrossEntropyLoss()
         self.topk = 5
         self.f1_average = 'macro'
         self.image_normalization = transforms.Compose([
@@ -377,7 +378,9 @@ class SimpleHorizonClassificationWithLSTMShortPathGeotempsMLPTabMLPResNet(Experi
             pred_topk_horizon_indices = torch.topk(padded_logits.view(-1, padded_logits.size(-1)), k=self.topk, dim=1).indices[mask]  # Apply same mask
             
             # Compute individual losses, then sum them together for backprop
-            train_loss = self.short_path_loss(logits, true_horizon_indices)
+            sp = self.short_path_loss(logits, true_horizon_indices)
+            ce = self.cross_entropy_loss(logits, true_horizon_indices)
+            train_loss = sp + ce
             train_loss.backward()
             clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
@@ -447,7 +450,9 @@ class SimpleHorizonClassificationWithLSTMShortPathGeotempsMLPTabMLPResNet(Experi
                 pred_topk_horizon_indices = torch.topk(padded_logits.view(-1, padded_logits.size(-1)), k=self.topk, dim=1).indices[mask] # Apply same mask
                     
                 # Compute batch losses
-                val_loss = self.short_path_loss(logits, true_horizon_indices)
+                sp = self.short_path_loss(logits, true_horizon_indices)
+                ce = self.cross_entropy_loss(logits, true_horizon_indices)
+                val_loss = sp + ce
 
                 # Add batch losses to total loss
                 eval_loss_total += val_loss.item()
