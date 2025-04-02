@@ -73,6 +73,50 @@ class TopKLoss(nn.Module):
         loss = -top_k_probabilities[target_mask].mean()
         return loss
 
+
+class ShortestPathLoss(nn.Module):
+    """Computes a shortest path loss based on the number of edges needed to traverse in the graph to reach the least common ancestor of two terminal nodes."""
+    def __init__(self, path_lengths_dict):
+        """
+        Args:
+            path_lengths_dict (dict): A dictionary where keys are tuples of node index pairs and values are the lengths of the paths between them.
+        """
+        super(ShortestPathLoss, self).__init__()
+        self.path_lengths_dict = path_lengths_dict
+
+    def forward(self, predicted_logits, true_labels):
+        """
+        Args:
+            predicted_logits (torch.Tensor): The predicted logits (batch_size, num_classes).
+            true_labels (torch.Tensor): The true labels as integers (batch_size,).
+
+        Returns:
+            loss (float): The average shortest path length over the batch.
+        """
+        # Get the top-1 predicted index
+        top_1_indices = torch.argmax(predicted_logits, dim=1)  # (batch_size,)
+
+        # Initialize total path length as a tensor with requires_grad=True
+        total_path_length = torch.zeros(1, device=predicted_logits.device, requires_grad=True)
+
+        # Iterate through true labels and top-1 predictions
+        for true, pred in zip(true_labels, top_1_indices):
+            # Compute the shortest path length between the true label and the predicted label
+            path_length = torch.tensor(
+                self.path_lengths_dict.get((true.item(), pred.item())) or 
+                self.path_lengths_dict.get((pred.item(), true.item())),
+                device=predicted_logits.device,
+                dtype=torch.float
+            )
+            
+            # Accumulate the path length
+            total_path_length = total_path_length + path_length
+
+        # Compute the average path length over the batch
+        loss = total_path_length / predicted_logits.size(0)
+        return loss
+    
+
 def precision_recall_at_k(true_labels, topk_predictions, all_labels, average='macro'):
     """
     Computes Precision@K and Recall@K for multi-class classification using logits.
