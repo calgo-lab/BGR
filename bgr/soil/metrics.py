@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from sklearn.metrics import precision_score, recall_score
+import numpy as np
 
 class TopKHorizonAccuracy(nn.Module):
     def __init__(self, label_embeddings, k=5):
@@ -117,6 +118,27 @@ class ShortestPathLoss(nn.Module):
         return loss
     
 
+def top_k_accuracy_from_indices(true_labels, topk_predictions):
+    """
+    Computes Top-K accuracy for multi-class classification using logits.
+
+    Args:
+        logits (torch.Tensor): The model's predicted logits (batch_size, num_classes).
+        true_labels (torch.Tensor): The true labels (batch_size,).
+        k (int): The number of top predictions to consider.
+
+    Returns:
+        accuracy (float): Top-K accuracy over the batch.
+    """
+    if type(topk_predictions) is np.ndarray and type(true_labels) is np.ndarray:
+        topk_predictions = torch.from_numpy(topk_predictions) # (batch_size, k)
+        true_labels = torch.from_numpy(true_labels) # (batch_size)
+
+    # Check if the true label is in the top-k predictions
+    correct = (topk_predictions == true_labels.unsqueeze(1))  # (batch_size, k)
+    # Sum up the correct matches and return the mean accuracy
+    return correct.any(dim=1).float().mean().item()
+
 def precision_recall_at_k(true_labels, topk_predictions, all_labels, average='macro'):
     """
     Computes Precision@K and Recall@K for multi-class classification using logits.
@@ -130,9 +152,12 @@ def precision_recall_at_k(true_labels, topk_predictions, all_labels, average='ma
         precision_at_k (float): Precision@K over the batch.
         recall_at_k (float): Recall@K over the batch.
     """
-
+    if type(topk_predictions) is np.ndarray and type(true_labels) is np.ndarray:
+        topk_predictions = torch.from_numpy(topk_predictions) # (batch_size, k)
+        true_labels = torch.from_numpy(true_labels) # (batch_size)
+    
     # Initialize predicted_labels with the top-1 prediction (i.e. first column)
-    predicted_labels = topk_predictions[:, 0].clone()  # (batch_size,)
+    predicted_labels = topk_predictions[:, 0].clone()  # (batch_size)
     
     # Check for each sample if the true label is among the top-K predictions
     relevant = (topk_predictions == true_labels.unsqueeze(1))  # (batch_size, k)

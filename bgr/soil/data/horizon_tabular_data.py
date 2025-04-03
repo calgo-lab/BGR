@@ -49,6 +49,7 @@ class HorizonDataProcessor:
             'Reliefformtyp', 'LageImRelief', 'KV_0_30', 'KV_30_100'
         ]
         self.soil_infos = ['Bodenart', 'Bodenfarbe', 'Steine', 'Karbonat', 'Humusgehaltsklasse', 'Durchwurzelung']
+        self.tabulars_output_dim_dict = {key: None for key in self.soil_infos}
         self.geotemp_img_infos = [
             'Probenahme_Monat', 'Probenahme_Jahr', 'xcoord', 'ycoord', 'Bodenklimaraum_Name',
             'Landnutzung', 'BZE_Moor', 'Hauptbodentyp', 'GrundwaStufe', 'GrundwaStand',
@@ -115,6 +116,14 @@ class HorizonDataProcessor:
         df = self._encode_and_scale_features(df)
         df = self._onehot_encode_categorical_features(df)
         df = self._aggregate_data_for_sequential_training(df)
+        
+        # Set the number of classes / outputs for each tabular feature
+        for key in self.tabulars_output_dim_dict.keys():
+            if key == 'Steine':
+                self.tabulars_output_dim_dict[key] = 1
+            else:
+                self.tabulars_output_dim_dict[key] = max(df[key].apply(max)) + 1
+        
         return df
     
     def multi_label_stratified_shuffle_split(self, df: pd.DataFrame, n_splits : int = 1, train_val_test_frac: list[float] = [0.7, 0.15, 0.15], random_state: int = None) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -394,8 +403,15 @@ class HorizonDataProcessor:
             HorizonDataProcessor._encode_categorical_columns(df, categ)
         df = df.fillna(df.median(numeric_only=True))
         df = df.astype({'Bodenart': int, 'Bodenfarbe': int, 'Humusgehaltsklasse': int})
+        
+        # Scale numerical features
+        # Note: We don't scale the 'Steine' feature, with MinMax due to its skewed distribution
+        # We scale it to 0-10, so that most of the values are in the range of 0-1
+        df['Steine'] = df['Steine'] / 10.0
+        
+        features_to_minmax_scale = [feature for feature in self.num_features if feature != 'Steine']
         scaler = MinMaxScaler()
-        df[self.num_features] = scaler.fit_transform(df[self.num_features])
+        df[features_to_minmax_scale] = scaler.fit_transform(df[features_to_minmax_scale])
         return df
     
     def _onehot_encode_categorical_features(self, df: pd.DataFrame) -> pd.DataFrame:
