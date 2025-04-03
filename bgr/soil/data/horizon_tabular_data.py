@@ -339,6 +339,14 @@ class HorizonDataProcessor:
         # Remove trailing numbers from the labels in the target column (they only account for how often the horizon is seen in the same picture)
         df[self.target] = df[self.target].str.replace(r'\d+$', '', regex=True)
         
+        # Replace (rare) main symbols that do not have a counterpart in the graph
+        # Note: Mapping was provided by domain experts
+        # Note: L-Horizons are not relevant and do not occur at all in the preprocessed dataframe
+        df[self.target] = df[self.target].str.replace('F', 'H', regex=False) # because of common Moor
+        df[self.target] = df[self.target].str.replace('O', 'H', regex=False) # because both organic
+        df[self.target] = df[self.target].str.replace('T', 'P', regex=False) # because both rich in tone
+        df[self.target] = df[self.target].str.replace('Y', 'G', regex=False) # because both dry soils with similar humid features
+        
         # Map rare labels to frequent labels via Levenshtein distance
         rare_labels_mapping = {}
         list_dict_mapping = list(dict_mapping.keys())
