@@ -297,7 +297,7 @@ class HorizonDataProcessor:
     
     def _process_soil_color_column(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Processes the soil color column by removing the Munsell Value (Saturation).
+        Processes the soil color column by trimming inconsistent labels and clustering the remaining ones.
         
         Args:
             df (pd.DataFrame): DataFrame containing the horizon data.
@@ -308,8 +308,11 @@ class HorizonDataProcessor:
         
         # Some GLEY values have inconsistent Munsell notation. Fix them.
         df['Bodenfarbe'] = df['Bodenfarbe'].str.replace(r'_/1|_/2', '', regex=True)
-        # Remove the number in front of the slash '/', only keep Chroma
-        df['Bodenfarbe'] = df['Bodenfarbe'].str.replace(r'\d+(\.\d+)?/', '', regex=True)
+        # Remove prefix 'WHITE' (just extra marker for Munsell values above 8)
+        df['Bodenfarbe'] = df['Bodenfarbe'].str.replace('WHITE ', '', regex=False)
+        # Grid clustering based on Munsell value and chroma
+        df['Bodenfarbe'] = df['Bodenfarbe'].map(HorizonDataProcessor._cluster_soil_color)
+        
         return df        
         
     def _process_target_column(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -335,6 +338,14 @@ class HorizonDataProcessor:
         df[self.target] = df[self.target].str.replace('°', '-', regex=False) # also these, so that there is only one type of mixtures (the minus-mixture)
         # Remove trailing numbers from the labels in the target column (they only account for how often the horizon is seen in the same picture)
         df[self.target] = df[self.target].str.replace(r'\d+$', '', regex=True)
+        
+        # Replace (rare) main symbols that do not have a counterpart in the graph
+        # Note: Mapping was provided by domain experts
+        # Note: L-Horizons are not relevant and do not occur at all in the preprocessed dataframe
+        df[self.target] = df[self.target].str.replace('F', 'H', regex=False) # because of common Moor
+        df[self.target] = df[self.target].str.replace('O', 'H', regex=False) # because both organic
+        df[self.target] = df[self.target].str.replace('T', 'P', regex=False) # because both rich in tone
+        df[self.target] = df[self.target].str.replace('Y', 'G', regex=False) # because both dry soils with similar humid features
         
         # Map rare labels to frequent labels via Levenshtein distance
         rare_labels_mapping = {}
@@ -474,3 +485,54 @@ class HorizonDataProcessor:
         lst[-1] = max_boundary
         lst = [x/max_boundary for x in lst]
         return lst
+    
+    @staticmethod
+    def _cluster_soil_color(color_label):
+        """
+        Clusters the soil color label into grid groups based on Munsell notation.
+        
+        Args:
+            color_label (str): The soil color label in Munsell notation.
+            
+        Returns:
+            str: Clustered soil color label.
+        """
+        try:
+            # Split the value into parts
+            page, value_chroma = color_label.split(' ')
+            value, chroma = value_chroma.split('/')
+            
+            # Group the first number
+            if value in ['2.5', '3']:
+                first_group = '<=3'
+            elif value in ['4', '5']:
+                first_group = '4-5'
+            elif value in ['6', '7']:
+                first_group = '6-7'
+            else:
+                first_group = '>=8'
+            
+            # Group the second number (the GLEY pages need to be treated differently)
+            if page == 'GLEY1':
+                if chroma in ['N', '10Y']:
+                    first_group = 'N-10Y'
+                elif chroma in ['5GY', '10GY']:
+                    first_group = '5GY-10GY'
+            elif page == 'GLEY2':
+                if chroma in ['10G', '5BG']:
+                    first_group = '10G-5BG'
+                elif chroma in ['10BG', '5B']:
+                    first_group = '10BG-5B'
+                elif chroma in ['10B', '5PB']:
+                    first_group = '10B-5PB'
+            else:
+                if chroma in ['1', '2']:
+                    second_group = '1-2'
+                elif chroma in ['3', '4']:
+                    second_group = '3-4'
+                elif chroma in ['6', '8']:
+                    second_group = '6-8'
+            
+            return f"{page} {first_group}/{second_group}"
+        except:
+            return np.nan  # Handle invalid or missing values
