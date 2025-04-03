@@ -115,7 +115,6 @@ class ExperimentRunner:
             
             # Train, validate and test the model
             model, metrics = experiment.train_and_validate(self.train_data, self.val_data, model_output_dir)
-            wandb.log(metrics)
             
             # Save the model
             self._save_model(model, model_output_dir)

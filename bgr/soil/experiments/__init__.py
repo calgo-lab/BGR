@@ -11,6 +11,7 @@ from .simple_horizon_classification_lstm_embed_geotmp_mlp_tab_mlp_hybrid_loss im
 from .simple_horizon_classification_lstm_geotmp_mlp_tab_mlp_resnet import SimpleHorizonClassificationWithLSTMGeotempsMLPTabMLPResNet
 from .simple_horizon_classification_lstm_embed_geotmp_mlp_tab_mlp_resnet import SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLPResNet
 from .simple_horizon_classification_lstm_shortpath_geotmp_mlp_tab_mlp_resnet import SimpleHorizonClassificationWithLSTMShortPathGeotempsMLPTabMLPResNet
+from .simple_tabulars_geotmp_resnet import SimpleTabularsGeotempsResNet
 
 def get_experiment(experiment_type, training_args, target, dataprocessor) -> Experiment:    
     if experiment_type == "depth_experiment":
@@ -37,6 +38,8 @@ def get_experiment(experiment_type, training_args, target, dataprocessor) -> Exp
         return SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLPResNet(training_args, target, dataprocessor)
     elif experiment_type == "simple_horizon_classification_lstm_shortpath_geotmp_mlp_tab_mlp_resnet":
         return SimpleHorizonClassificationWithLSTMShortPathGeotempsMLPTabMLPResNet(training_args, target, dataprocessor)
+    elif experiment_type == "simple_tabulars_geotmp_resnet":
+        return SimpleTabularsGeotempsResNet(training_args, target, dataprocessor)
     else:
         raise ValueError(f"Unknown experiment type: {experiment_type}")
     
@@ -65,5 +68,7 @@ def get_experiment_hyperparameters(experiment_type) -> dict:
         return SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLPResNet.get_experiment_hyperparameters()
     elif experiment_type == "simple_horizon_classification_lstm_shortpath_geotmp_mlp_tab_mlp_resnet":
         return SimpleHorizonClassificationWithLSTMShortPathGeotempsMLPTabMLPResNet.get_experiment_hyperparameters()
+    elif experiment_type == "simple_tabulars_geotmp_resnet":
+        return SimpleTabularsGeotempsResNet.get_experiment_hyperparameters()
     else:
         raise ValueError(f"Unknown experiment type: {experiment_type}")
