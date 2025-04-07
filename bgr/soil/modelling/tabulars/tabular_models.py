@@ -1,15 +1,14 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-from bgr.soil.modelling.image_encoders import ResNetPatchEncoder, PatchCNNEncoder
-from bgr.soil.modelling.geotemp_encoders import GeoTemporalEncoder
-from bgr.soil.modelling.tabulars.tabular_predictors import LSTMTabularPredictor
+from bgr.soil.modelling.image_modules import ResNetPatchEncoder, PatchCNNEncoder
+from bgr.soil.modelling.geotemp_modules import GeoTemporalEncoder
+from bgr.soil.modelling.tabulars.tabular_modules import LSTMTabularPredictor
 
 class SimpleTabularModel(nn.Module):
     def __init__(self,
         tabular_output_dim_dict : dict[str, int],
-        geotemp_input_dim,
+        geotemp_input_dim : int,
         segment_encoder_output_dim : int = 512,
         geotemp_output_dim : int = 256,
         patch_size : int = 512,

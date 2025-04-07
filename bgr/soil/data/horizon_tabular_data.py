@@ -2,10 +2,14 @@ from typing import Tuple
 from jellyfish import levenshtein_distance
 from iterstrat.ml_stratifiers import MultilabelStratifiedShuffleSplit
 import os
-import pandas as pd
 import numpy as np
 import pickle
 from sklearn.preprocessing import MinMaxScaler
+
+import warnings
+warnings.simplefilter(action = "ignore", category = FutureWarning) # silence FutureWarning for downcasting in 'replace'; must come before importing pandas
+import pandas as pd
+pd.options.mode.chained_assignment = None  # default='warn' to silence SettingWithCopyWarning
 
 FILE_NAME = "data_horizons.csv"
 SIMPLIFIED_SYMBOL_FILE_NAME = "Vereinfachung_Horizontsymbole.csv"

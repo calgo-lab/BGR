@@ -3,10 +3,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModel, AutoFeatureExtractor
 from bgr.soil.utils import concat_img_geotemp_depth
-from bgr.soil.modelling.image_encoders import ResNetEncoder, HDCNNEncoder, PatchCNNEncoder, ResNetPatchEncoder
-from bgr.soil.modelling.geotemp_encoders import GeoTemporalEncoder
-from bgr.soil.modelling.depth_markers import LSTMDepthMarkerPredictor
-from bgr.soil.modelling.tabulars.tabular_predictors import MLPTabularPredictor
+from bgr.soil.modelling.image_modules import ResNetEncoder, HDCNNEncoder, PatchCNNEncoder, ResNetPatchEncoder
+from bgr.soil.modelling.geotemp_modules import GeoTemporalEncoder
+from bgr.soil.modelling.depth.depth_modules import LSTMDepthMarkerPredictor
+from bgr.soil.modelling.tabulars.tabular_modules import MLPTabularPredictor
 from bgr.soil.modelling.horizon_embedders import HorizonEmbedder, HorizonLSTMEmbedder
 
 
@@ -26,37 +26,6 @@ class SegmentToTabular(nn.Module):
         tab_predictions = self.tabular_predictor(seg_features).squeeze()
 
         return tab_predictions
-
-class HorizonSegmenter(nn.Module):
-    def __init__(self,
-                 geo_temp_input_dim, geo_temp_output_dim=32, # params for geotemp encoder
-                 max_seq_len=10, stop_token=1.0,  # params for depth predictor (any class)
-                 rnn_hidden_dim=256  # params for LSTMDepthPredictor
-                 ):
-        super(HorizonSegmenter, self).__init__()
-        self.stop_token = stop_token
-        #self.image_encoder = ResNetEncoder(resnet_version='18')
-        self.image_encoder = PatchCNNEncoder(patch_size=512, patch_stride=512)
-        self.geo_temp_encoder = GeoTemporalEncoder(geo_temp_input_dim, geo_temp_output_dim)
-
-        # Choose from different depth predictors
-        #self.depth_marker_predictor = TransformerDepthMarkerPredictor(self.image_encoder.num_img_features + geo_temp_output_dim,
-        #                                                              transformer_dim, num_transformer_heads, num_transformer_layers,
-        #                                                              max_seq_len, stop_token)
-        self.depth_marker_predictor = LSTMDepthMarkerPredictor(self.image_encoder.num_img_features + geo_temp_output_dim,
-                                                               rnn_hidden_dim, max_seq_len, stop_token)
-
-
-    def forward(self, images, geo_temp):
-        # Extract image + geotemp features, then concatenate them
-        image_features = self.image_encoder(images)
-        geo_temp_features = self.geo_temp_encoder(geo_temp)
-        img_geotemp_vector = torch.cat([image_features, geo_temp_features], dim=-1)
-
-        # Predict depth markers based on concatenated vector
-        depth_markers = self.depth_marker_predictor(img_geotemp_vector)
-
-        return depth_markers
 
 
 class HorizonClassifier(nn.Module):

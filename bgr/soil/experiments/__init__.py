@@ -1,5 +1,5 @@
 from ._base import Experiment
-from .depth_experiment import DepthExperiment
+from .simple_depth.simple_depth_geotmp import SimpleDepthsGeotemps
 from .simple_horizon.simple_horizon_classification_embed_geotmp_mlp import SimpleHorizonClassificationEmbeddingsGeotempMLP
 from .simple_horizon.simple_horizon_classification_embed_geotmp_mlp_tab_mlp import SimpleHorizonClassificationWithEmbeddingsGeotempsMLPTabMLP
 from .simple_horizon.simple_horizon_classification import SimpleHorizonClassification
@@ -15,8 +15,8 @@ from .simple_tabulars.simple_tabulars_geotmp_resnet import SimpleTabularsGeotemp
 from .simple_tabulars.simple_tabulars_geotmp import SimpleTabularsGeotemps
 
 def get_experiment(experiment_type, training_args, target, dataprocessor) -> Experiment:    
-    if experiment_type == "depth_experiment":
-        return DepthExperiment(training_args, target, dataprocessor)
+    if experiment_type == "simple_depths_geotmp":
+        return SimpleDepthsGeotemps(training_args, target, dataprocessor)
     elif experiment_type == "simple_horizon_classification_embed_geotmp_mlp":
         return SimpleHorizonClassificationEmbeddingsGeotempMLP(training_args, target, dataprocessor)
     elif experiment_type == "simple_horizon_classification_embed_geotmp_mlp_tab_mlp":
@@ -47,8 +47,8 @@ def get_experiment(experiment_type, training_args, target, dataprocessor) -> Exp
         raise ValueError(f"Unknown experiment type: {experiment_type}")
     
 def get_experiment_hyperparameters(experiment_type) -> dict:
-    if experiment_type == "depth_experiment":
-        return DepthExperiment.get_experiment_hyperparameters()
+    if experiment_type == "simple_depths_geotmp":
+        return SimpleDepthsGeotemps.get_experiment_hyperparameters()
     elif experiment_type == "simple_horizon_classification_embed_geotmp_mlp":
         return SimpleHorizonClassificationEmbeddingsGeotempMLP.get_experiment_hyperparameters()
     elif experiment_type == "simple_horizon_classification_embed_geotmp_mlp_tab_mlp":
