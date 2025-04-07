@@ -6,7 +6,7 @@ from bgr.soil.utils import concat_img_geotemp_depth
 from bgr.soil.modelling.image_encoders import ResNetEncoder, HDCNNEncoder, PatchCNNEncoder, ResNetPatchEncoder
 from bgr.soil.modelling.geotemp_encoders import GeoTemporalEncoder
 from bgr.soil.modelling.depth_markers import LSTMDepthMarkerPredictor
-from bgr.soil.modelling.tabular_predictors import MLPTabularPredictor, LSTMTabularPredictor
+from bgr.soil.modelling.tabulars.tabular_predictors import MLPTabularPredictor
 from bgr.soil.modelling.horizon_embedders import HorizonEmbedder, HorizonLSTMEmbedder
 
 
