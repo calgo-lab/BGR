@@ -67,6 +67,113 @@ class ImageTabularDataset(Dataset):
             return image, tabular_features, label
         else:
             return image, tabular_features
+        
+
+class ImagePatchesTabularDataset(Dataset):
+    """Patches from whole images.
+
+    Args:
+        
+    """
+    def __init__(
+                self,
+                dataframe,
+                image_patch_size=(224, 224),
+                image_patch_number=48,
+                normalize=None,
+                augment=[], # TODO: needed for random patches?
+                image_path=None,
+                label=None,
+                feature_columns=None,
+                random_state : int = None
+                ):
+
+        self.dataframe = dataframe
+        self.image_patch_size = image_patch_size
+        self.image_patch_number = image_patch_number
+        self.normalize = normalize
+        self.augment = augment
+        self.image_path = image_path
+        self.label = label
+        self.feature_columns = feature_columns
+        self.random_state = random_state
+
+        # Precompute a list of (index, augmentation) tuples to represent the expanded dataset
+        self.index_map = []
+        for idx in range(len(self.dataframe)):
+            # Original image
+            self.index_map.append((idx, lambda x: x)) # Identity function for no augmentation
+            # Augmented images
+            for aug in self.augment:
+                self.index_map.append((idx, aug))
+
+    def __len__(self):
+        # Dataset length (number of rows with or without augmentation)
+        return len(self.index_map)
+
+    def __getitem__(self, expanded_idx):
+        # Get the original dataframe index and the augmentation to apply
+        original_idx, augmentation = self.index_map[expanded_idx]
+
+        # Extract the image path from the DataFrame, read and resize image
+        image_path = self.dataframe.iloc[original_idx][self.image_path]
+        image = Image.open(image_path)
+        #image = transforms.Resize(self.image_size)(image) # no resizing, random original patches instead
+
+        # Apply augmentation if specified
+        if self.augment:
+            image = augmentation(image)
+
+        # Apply normalization if provided -> _process_image_to_patches takes care of this
+        #if self.normalize:
+        #    image = self.normalize(image)
+        
+        # Crop random patches from original image
+        patches = self._process_image_to_patches(image)
+
+        # Extract tabular features from the DataFrame (as numerical values)
+        tabular_features_array = self.dataframe.iloc[original_idx][self.feature_columns].astype(float).values
+        tabular_features = torch.tensor(tabular_features_array, dtype=torch.float32)
+
+        # Extract the label if provided
+        if self.label:
+            label = torch.tensor(self.dataframe.iloc[original_idx][self.label], dtype=torch.long)  # for classification (long)
+            return patches, tabular_features, label
+        else:
+            return patches, tabular_features
+        
+    def _process_image_to_patches(self, img : Image):
+        """
+        Processes an image into patches.
+
+        Args:
+            img (torch.Tensor): Image to process.
+
+        Returns:
+            torch.Tensor: Processed patches.
+        """
+        
+        original_rng_state = torch.get_rng_state()
+        if self.random_state:
+            torch.manual_seed(self.random_state)
+        
+        # Extract patches
+        random_crop = transforms.RandomCrop(self.image_patch_size, pad_if_needed=True, padding_mode='reflect')
+        patches = []
+        for _ in range(self.image_patch_number):
+            # Randomly crop a patch
+            patch = random_crop(img)
+            patch = self.normalize(patch)
+            patches.append(patch)
+            
+        # Restore the original RNG state
+        torch.set_rng_state(original_rng_state)
+        
+        # Convert patches to tensor
+        patches = torch.stack(patches)
+        
+        return patches
+        
 
 class SegmentsTabularDataset(Dataset):
     """
@@ -324,7 +431,7 @@ class SegmentPatchesTabularDataset(Dataset):
         for i in range(len(pixel_depths) - 1):
             upper, lower = pixel_depths[i], pixel_depths[i + 1]
             
-            # Crop and and process the segment into patches
+            # Crop and process the segment into patches
             segment = image.crop((0, upper, image.width, lower))
             patches = self._process_segment_to_patches(segment)
             segment_patches.append(patches)

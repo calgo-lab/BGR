@@ -224,7 +224,7 @@ class SimpleTabularsGeotempsResNet(Experiment):
             geotemp_input_dim=len(self.dataprocessor.geotemp_img_infos) - 2, # without index and img path
             segment_encoder_output_dim=self.hyperparameters['segment_encoder_output_dim'],
             geotemp_output_dim=self.hyperparameters['geotemp_output_dim'],
-            patch_size=self.hyperparameters['patch_size'],
+            #patch_size=self.hyperparameters['patch_size'], # only used for PatchCNN
             predictor_hidden_dim=self.hyperparameters['predictor_hidden_dim'],
             num_lstm_layers=self.hyperparameters['num_lstm_layers'],
             predefined_random_patches=True
@@ -744,7 +744,7 @@ class SimpleTabularsGeotempsResNet(Experiment):
             'num_segment_patches' : 48,
             'segment_encoder_output_dim': 512,
             'geotemp_output_dim': 256,
-            'patch_size': 512,
+            #'patch_size': 512, # only used for PatchCNN
             'predictor_hidden_dim': 1024,
             'num_lstm_layers': 2
         }

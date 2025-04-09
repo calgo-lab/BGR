@@ -738,7 +738,7 @@ class SimpleTabularsGeotemps(Experiment):
     @staticmethod
     def get_experiment_hyperparameters():
         return {
-            'num_segment_patches' : 48,
+            #'num_segment_patches' : 48, # only used with SegmentPatches dataset for ResNetPatch
             'segment_encoder_output_dim': 512,
             'geotemp_output_dim': 256,
             'patch_size': 512,
