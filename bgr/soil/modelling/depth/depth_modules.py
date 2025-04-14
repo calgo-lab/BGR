@@ -46,6 +46,66 @@ class LSTMDepthMarkerPredictor(nn.Module):
         return depth_markers
 
 
+class CrossAttentionTransformerDepthMarkerPredictor(nn.Module):
+    def __init__(self, input_dim, hidden_dim=256, max_seq_len=10, stop_token=1.0, num_heads=8, num_layers=2):
+        super(CrossAttentionTransformerDepthMarkerPredictor, self).__init__()
+        self.hidden_dim = hidden_dim
+        self.max_seq_len = max_seq_len
+        self.stop_token = stop_token
+
+        # Project input (image-geotemp vector) to hidden dimension
+        self.fc = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(0.2)
+        )
+
+        # Positional encoding for queries
+        self.query_pos = nn.Parameter(torch.randn(max_seq_len, hidden_dim))
+
+        # Query embeddings (learnable)
+        self.query_embed = nn.Parameter(torch.randn(max_seq_len, hidden_dim))
+
+        # Transformer decoder layers (cross-attention)
+        decoder_layer = nn.TransformerDecoderLayer(d_model=hidden_dim, nhead=num_heads, dropout=0.2, batch_first=True)
+        self.transformer_decoder = nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
+
+        # Prediction head
+        self.predictor = nn.Linear(hidden_dim, 1)
+
+    def forward(self, x):
+        """
+        Args:
+            x: (batch_size, input_dim)
+        Returns:
+            depth_markers: (batch_size, max_seq_len)
+        """
+        batch_size = x.size(0)
+        memory = self.fc(x).unsqueeze(1)  # (batch_size, 1, hidden_dim)
+
+        # Repeat the memory to match the query length
+        memory = memory.repeat(1, self.max_seq_len, 1)  # (batch_size, max_seq_len, hidden_dim)
+
+        # Prepare the query (same for all batch)
+        query = self.query_embed.unsqueeze(0).repeat(batch_size, 1, 1)  # (batch_size, max_seq_len, hidden_dim)
+
+        # Apply transformer decoder
+        decoded = self.transformer_decoder(query, memory)  # (batch_size, max_seq_len, hidden_dim)
+
+        # Predict depths
+        depth_markers = self.predictor(decoded).squeeze(-1)  # (batch_size, max_seq_len)
+
+        # Round values very near to stop_token and above it to stop_token
+        depth_markers = torch.where(
+            depth_markers > self.stop_token - 0.01,
+            torch.full_like(depth_markers, self.stop_token),
+            depth_markers)
+
+        return depth_markers
+
+
+# DEPRECATED
 class TransformerDepthMarkerPredictor(nn.Module):
     def __init__(self, input_dim, transformer_dim=128, num_heads=4, num_layers=2, max_seq_len=10, stop_token=1.0):
         super(TransformerDepthMarkerPredictor, self).__init__()
@@ -81,78 +141,3 @@ class TransformerDepthMarkerPredictor(nn.Module):
             x)
 
         return x
-
-
-# Problem: this one only predicts the same number throughout the depths list.
-# Aggressive regularization and adjusted loss only help insignificantly in varying the output.
-# By removing the .repeat() in forward and making self.fc_out predict max_seq_len depths, there is more variance in the predicted depths list,
-# but they still stay identical for all the samples. I did the same with the TransformerDepthPredictor above.
-class CrossAttentionDepthMarkerPredictor(nn.Module):
-    def __init__(self, input_dim, transformer_dim=128, num_heads=4, num_layers=2,
-                 max_seq_len=10, stop_token=1.0):
-        super(CrossAttentionDepthMarkerPredictor, self).__init__()
-
-        self.stop_token = stop_token
-        self.max_seq_len = max_seq_len
-
-        # Encoder: Processes input features (image + geotemporal features)
-        self.encoder_fc = nn.Sequential(
-            nn.Linear(input_dim, transformer_dim),
-            nn.BatchNorm1d(transformer_dim),
-            nn.ReLU(),
-            nn.Linear(transformer_dim, transformer_dim),
-            nn.BatchNorm1d(transformer_dim),
-            nn.ReLU()
-        )
-        self.encoder = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(d_model=transformer_dim, nhead=num_heads), num_layers=num_layers
-        )
-
-        # Decoder: Predicts depth markers step-by-step using cross-attention
-        self.decoder = nn.TransformerDecoder(
-            nn.TransformerDecoderLayer(d_model=transformer_dim, nhead=num_heads), num_layers=num_layers
-        )
-
-        # Output Layers
-        self.depth_embed = nn.Embedding(max_seq_len + 1, transformer_dim)  # Embedding for positional depth tokens
-        self.fc_out = nn.Linear(transformer_dim, 1)  # Predict a single depth value at each step
-
-        self.sigmoid = nn.Sigmoid()  # Normalize output depths to [0, 1]
-
-    def forward(self, x, targets=None):
-        """
-        Args:
-            x: Input features (batch_size, input_dim)
-            targets: Optional ground truth depth markers for teacher forcing (batch_size, seq_len)
-
-        Returns:
-            Predicted depth markers (batch_size, max_seq_len)
-        """
-        batch_size = x.size(0)
-
-        # Encode input features
-        x = self.encoder_fc(x)  # (batch_size, transformer_dim)
-        x = x.unsqueeze(1).repeat(1, self.max_seq_len, 1).permute(1, 0, 2)  # (seq_len, batch_size, transformer_dim)
-        memory = self.encoder(x)  # (seq_len, batch_size, transformer_dim)
-
-        # Initialize decoder inputs
-        sos_token = torch.zeros((batch_size, 1, 1), device=x.device)  # Start-of-sequence token
-        decoder_input = self.depth_embed(sos_token.long()).squeeze(1).permute(1, 0, 2)  # (1, batch_size, transformer_dim)
-
-        outputs = []
-        for step in range(self.max_seq_len):
-            # Cross-attention decoding
-            decoder_output = self.decoder(decoder_input, memory)  # (step + 1, batch_size, transformer_dim)
-            depth_pred = self.fc_out(decoder_output[-1])  # (batch_size, 1)
-            depth_pred = self.sigmoid(depth_pred)  # Normalize to [0, 1]
-            outputs.append(depth_pred)
-
-            # Teacher forcing: use ground truth depth markers as the next input during training
-            if targets is not None and step < targets.size(1):
-                next_input = self.depth_embed(targets[:, step].unsqueeze(-1).long())  # (batch_size, transformer_dim)
-            else:
-                next_input = self.depth_embed(depth_pred.long())  # Use predicted depth marker
-            decoder_input = torch.cat([decoder_input, next_input.permute(1, 0, 2)], dim=0)
-
-        outputs = torch.cat(outputs, dim=-1)  # (batch_size, max_seq_len)
-        return outputs
