@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from bgr.soil.modelling.image_modules import ResNetPatchEncoder, PatchCNNEncoder
+from bgr.soil.modelling.image_modules import HDCNNEncoder, ResNetPatchEncoder, PatchCNNEncoder
 from bgr.soil.modelling.geotemp_modules import GeoTemporalEncoder
-from bgr.soil.modelling.tabulars.tabular_modules import LSTMTabularPredictor
+from bgr.soil.modelling.tabulars.tabular_modules import LSTMTabularPredictor, MLPTabularPredictor
 
 class SimpleTabularModel(nn.Module):
     def __init__(self,
@@ -71,3 +71,21 @@ class SimpleTabularModel(nn.Module):
             tabular_predictions[key] = predictor(combined_features)
         
         return tabular_predictions
+    
+# DEPRECATED. used for training one tabular at a time
+class SegmentToTabular(nn.Module):
+    def __init__(self, tab_output_dim, classification=True, stop_token=1.0):
+        super(SegmentToTabular, self).__init__()
+        #self.segment_encoder = ResNetEncoder(resnet_version='18')
+        self.segment_encoder = HDCNNEncoder()
+
+        self.tabular_predictor = MLPTabularPredictor(input_dim=self.segment_encoder.num_img_features,
+                                                     output_dim=tab_output_dim, classification=classification)
+        self.stop_token = stop_token
+
+    def forward(self, cropped_images):
+
+        seg_features = self.segment_encoder(cropped_images)
+        tab_predictions = self.tabular_predictor(seg_features).squeeze()
+
+        return tab_predictions

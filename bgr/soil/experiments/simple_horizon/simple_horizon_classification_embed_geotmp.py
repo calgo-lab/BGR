@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 from bgr.soil.data.horizon_tabular_data import HorizonDataProcessor
 from bgr.soil.experiments import Experiment
-from bgr.soil.modelling.general_models import SimpleHorizonClassifierWithEmbeddingsGeotemps
+from BGR.bgr.soil.modelling.horizon.horizon_models import SimpleHorizonClassifierWithEmbeddingsGeotemps
 from bgr.soil.metrics import TopKHorizonAccuracy, precision_recall_at_k
 from bgr.soil.data.datasets import SegmentsTabularDataset
 
