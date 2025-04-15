@@ -7,7 +7,7 @@ from bgr.soil.modelling.image_modules import ResNetEncoder, HDCNNEncoder, PatchC
 from bgr.soil.modelling.geotemp_modules import GeoTemporalEncoder
 from bgr.soil.modelling.depth.depth_modules import LSTMDepthMarkerPredictor
 from bgr.soil.modelling.tabulars.tabular_modules import MLPTabularPredictor
-from BGR.bgr.soil.modelling.horizon.horizon_modules import HorizonEmbedder, HorizonLSTMEmbedder
+from bgr.soil.modelling.horizon.horizon_modules import HorizonEmbedder, HorizonLSTMEmbedder
 
 
 class SimpleHorizonClassifier(nn.Module):

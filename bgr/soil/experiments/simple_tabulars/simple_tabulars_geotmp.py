@@ -75,9 +75,9 @@ class SimpleTabularsGeotemps(Experiment):
             dataframe=train_df,
             normalize=self.image_normalization,
             label_column=self.target,
-            feature_columns=self.dataprocessor.geotemp_img_infos[1:-1], # without index and img path
-            segments_tab_num_feature_columns=self.segments_tabular_feature_columns,
-            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns
+            geotemp_columns=self.dataprocessor.geotemp_img_infos[1:-1], # without index and img path
+            tab_num_columns=self.segments_tabular_feature_columns,
+            tab_categ_columns=self.segments_tabular_categ_feature_columns
         )
         train_loader = DataLoader(train_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
 
@@ -85,9 +85,9 @@ class SimpleTabularsGeotemps(Experiment):
             dataframe=val_df,
             normalize=self.image_normalization,
             label_column=self.target,
-            feature_columns=self.dataprocessor.geotemp_img_infos[1:-1], # without index and img path
-            segments_tab_num_feature_columns=self.segments_tabular_feature_columns,
-            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns
+            geotemp_columns=self.dataprocessor.geotemp_img_infos[1:-1], # without index and img path
+            tab_num_columns=self.segments_tabular_feature_columns,
+            tab_categ_columns=self.segments_tabular_categ_feature_columns
         )
         val_loader = DataLoader(val_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
@@ -179,9 +179,9 @@ class SimpleTabularsGeotemps(Experiment):
             dataframe=test_df,
             normalize=self.image_normalization,
             label_column=self.target,
-            feature_columns=self.dataprocessor.geotemp_img_infos[1:-1], # without index and img path
-            segments_tab_num_feature_columns=self.segments_tabular_feature_columns,
-            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns
+            geotemp_columns=self.dataprocessor.geotemp_img_infos[1:-1], # without index and img path
+            tab_num_columns=self.segments_tabular_feature_columns,
+            tab_categ_columns=self.segments_tabular_categ_feature_columns
         )
         
         test_loader = DataLoader(test_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)

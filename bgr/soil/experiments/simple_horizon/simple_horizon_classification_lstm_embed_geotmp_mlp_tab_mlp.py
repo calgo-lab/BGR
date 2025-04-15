@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 from bgr.soil.data.horizon_tabular_data import HorizonDataProcessor
 from bgr.soil.experiments import Experiment
-from BGR.bgr.soil.modelling.horizon.horizon_models import SimpleHorizonClassifierWithEmbeddingsGeotempsMLPTabMLP
+from bgr.soil.modelling.horizon.horizon_models import SimpleHorizonClassifierWithEmbeddingsGeotempsMLPTabMLP
 from bgr.soil.metrics import TopKHorizonAccuracy, precision_recall_at_k
 from bgr.soil.data.datasets import SegmentsTabularDataset
 
@@ -78,9 +78,9 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment)
             dataframe=train_df,
             normalize=self.image_normalization,
             label_column=self.target,
-            feature_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
-            segments_tab_num_feature_columns=self.segments_tabular_feature_columns,
-            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns
+            geotemp_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
+            tab_num_columns=self.segments_tabular_feature_columns,
+            tab_categ_columns=self.segments_tabular_categ_feature_columns
         )
         train_loader = DataLoader(train_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
@@ -88,9 +88,9 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment)
             dataframe=val_df,
             normalize=self.image_normalization,
             label_column=self.target,
-            feature_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
-            segments_tab_num_feature_columns=self.segments_tabular_feature_columns,
-            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns
+            geotemp_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
+            tab_num_columns=self.segments_tabular_feature_columns,
+            tab_categ_columns=self.segments_tabular_categ_feature_columns
         )
         val_loader = DataLoader(val_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
@@ -227,9 +227,9 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment)
             dataframe=test_df,
             normalize=self.image_normalization,
             label_column=self.target,
-            feature_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
-            segments_tab_num_feature_columns=self.segments_tabular_feature_columns,
-            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns
+            geotemp_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
+            tab_num_columns=self.segments_tabular_feature_columns,
+            tab_categ_columns=self.segments_tabular_categ_feature_columns
         )
         test_loader = DataLoader(test_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         

@@ -53,9 +53,9 @@ class SimpleDepthsGeotempsResNetCrossAttention(Experiment):
             dataframe=train_df,
             normalize=self.image_normalization,
             augment=[],
-            image_path='file',
-            label=None, # no label column as input; access it instead via 'index' during training
-            feature_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
+            img_path_column='file',
+            label_column=None, # no label column as input; access it instead via 'index' during training
+            geotemp_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
             image_patch_number=self.hyperparameters['num_image_patches']
         )
         train_loader = DataLoader(train_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
@@ -64,9 +64,9 @@ class SimpleDepthsGeotempsResNetCrossAttention(Experiment):
             dataframe=val_df,
             normalize=self.image_normalization,
             augment=[],
-            image_path='file',
-            label=None, # no label column as input; access it instead via 'index' during training
-            feature_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
+            img_path_column='file',
+            label_column=None, # no label column as input; access it instead via 'index' during training
+            geotemp_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
             image_patch_number=self.hyperparameters['num_image_patches']
         )
         val_loader = DataLoader(val_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
@@ -159,9 +159,9 @@ class SimpleDepthsGeotempsResNetCrossAttention(Experiment):
             dataframe=test_df,
             normalize=self.image_normalization,
             augment=[],
-            image_path='file',
-            label=None, # no label column as input; access it instead via 'index' during training
-            feature_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
+            img_path_column='file',
+            label_column=None, # no label column as input; access it instead via 'index' during training
+            geotemp_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
             image_patch_number=self.hyperparameters['num_image_patches']
         )
         test_loader = DataLoader(test_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)

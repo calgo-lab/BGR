@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from BGR.bgr.soil.modelling.depth.depth_modules import LSTMDepthMarkerPredictor
-from BGR.bgr.soil.modelling.geotemp_modules import GeoTemporalEncoder
-from BGR.bgr.soil.modelling.horizon.horizon_modules import HorizonEmbedder
-from BGR.bgr.soil.modelling.image_modules import ResNetEncoder
-from BGR.bgr.soil.modelling.tabulars.tabular_modules import MLPTabularPredictor
+from bgr.soil.modelling.depth.depth_modules import LSTMDepthMarkerPredictor
+from bgr.soil.modelling.geotemp_modules import GeoTemporalEncoder
+from bgr.soil.modelling.horizon.horizon_modules import HorizonEmbedder
+from bgr.soil.modelling.image_modules import ResNetEncoder
+from bgr.soil.modelling.tabulars.tabular_modules import MLPTabularPredictor
 
 
 class HorizonClassifier(nn.Module):
