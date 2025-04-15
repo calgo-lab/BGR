@@ -327,7 +327,7 @@ class SimpleTabularsGeotemps(Experiment):
         
         train_loader_tqdm = tqdm(train_loader, desc="Training", leave=False, unit="batch")
         for batch in train_loader_tqdm:
-            segments, padded_segments_tabulars_labels, geotemp_features, horizon_indices = batch
+            _, segments, padded_segments_tabulars_labels, geotemp_features, horizon_indices = batch # full image not needed
             segments, padded_segments_tabulars_labels, geotemp_features = segments.to(device), padded_segments_tabulars_labels.to(device), geotemp_features.to(device)
             
             # Mask for valid indices
@@ -527,7 +527,7 @@ class SimpleTabularsGeotemps(Experiment):
         
         eval_loader_tqdm = tqdm(eval_loader, desc=f"{mode.capitalize()} Evaluation", leave=False, unit="batch")
         for batch in eval_loader_tqdm:
-            segments, padded_segments_tabulars_labels, geotemp_features, horizon_indices = batch
+            _, segments, padded_segments_tabulars_labels, geotemp_features, horizon_indices = batch # full image not needed
             segments, padded_segments_tabulars_labels, geotemp_features = segments.to(device), padded_segments_tabulars_labels.to(device), geotemp_features.to(device)
 
             # Mask for valid indices

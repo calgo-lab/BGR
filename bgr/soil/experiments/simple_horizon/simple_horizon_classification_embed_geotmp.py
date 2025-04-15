@@ -337,7 +337,7 @@ class SimpleHorizonClassificationEmbeddingsGeotemp(Experiment):
         
         train_loader_tqdm = tqdm(train_loader, desc="Training", leave=False)
         for batch in train_loader_tqdm:
-            segments, _, geotemp_features, padded_true_horizon_indices = batch # tabular_features not needed
+            _, segments, _, geotemp_features, padded_true_horizon_indices = batch # # full image and tabular_features not needed
             segments, geotemp_features, padded_true_horizon_indices = segments.to(device), geotemp_features.to(device), padded_true_horizon_indices.to(device)
 
             optimizer.zero_grad() # otherwise, PyTorch accumulates the gradients during backprop
@@ -412,7 +412,7 @@ class SimpleHorizonClassificationEmbeddingsGeotemp(Experiment):
         eval_loader_tqdm = tqdm(eval_loader, desc="Evaluating", leave=False)
         with torch.no_grad():
             for batch in eval_loader_tqdm:
-                segments, _, geotemp_features, padded_true_horizon_indices = batch # tabular_features not needed
+                _, segments, _, geotemp_features, padded_true_horizon_indices = batch # # full image and tabular_features not needed
                 segments, geotemp_features, padded_true_horizon_indices = segments.to(device), geotemp_features.to(device), padded_true_horizon_indices.to(device)
 
                 # Predict depth markers (as padded tensors)

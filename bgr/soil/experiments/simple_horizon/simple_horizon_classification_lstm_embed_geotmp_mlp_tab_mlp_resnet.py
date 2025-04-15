@@ -365,7 +365,7 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLPResNet(Exper
         
         train_loader_tqdm = tqdm(train_loader, desc="Training", leave=False)
         for batch in train_loader_tqdm:
-            segments, segments_tabular_features, geotemp_features, padded_true_horizon_indices = batch
+            _, segments, segments_tabular_features, geotemp_features, padded_true_horizon_indices = batch # full image not needed
             segments, segments_tabular_features, geotemp_features, padded_true_horizon_indices = segments.to(device), segments_tabular_features.to(device), geotemp_features.to(device), padded_true_horizon_indices.to(device)
 
             optimizer.zero_grad() # otherwise, PyTorch accumulates the gradients during backprop
@@ -440,7 +440,7 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLPResNet(Exper
         eval_loader_tqdm = tqdm(eval_loader, desc="Evaluating", leave=False)
         with torch.no_grad():
             for batch in eval_loader_tqdm:
-                segments, segments_tabular_features, geotemp_features, padded_true_horizon_indices = batch
+                _, segments, segments_tabular_features, geotemp_features, padded_true_horizon_indices = batch # full image not needed
                 segments, segments_tabular_features, geotemp_features, padded_true_horizon_indices = segments.to(device), segments_tabular_features.to(device), geotemp_features.to(device), padded_true_horizon_indices.to(device)
 
                 # Predict depth markers (as padded tensors)

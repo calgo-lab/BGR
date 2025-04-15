@@ -191,7 +191,8 @@ class SegmentsTabularDataset(Dataset):
         max_segments : int =8,
         geotemp_columns : list =None,
         tab_num_columns : list = None,
-        tab_categ_columns : dict =None
+        tab_categ_columns : dict =None,
+        image_size : tuple = (2048, 1024)
     ):
         """
         
@@ -206,6 +207,7 @@ class SegmentsTabularDataset(Dataset):
         self.geotemp_columns = geotemp_columns
         self.tab_num_columns = tab_num_columns
         self.tab_categ_columns = tab_categ_columns
+        self.image_size = image_size
         
         if self.normalize is None:
             self.normalize = transforms.Compose([
@@ -294,6 +296,10 @@ class SegmentsTabularDataset(Dataset):
         if self.tab_num_columns or self.tab_categ_columns:
             tabular_features = torch.stack(tabular_features)
         labels = torch.tensor(labels, dtype=torch.long)
+        
+        # Resize and normalize the whole image (only needed when training end-to-end)
+        image = transforms.Resize(self.image_size)(image)
+        image = self.normalize(image)
 
         if self.geotemp_columns:
             # Extract geotemp features from the DataFrame (as numerical values)
@@ -301,21 +307,21 @@ class SegmentsTabularDataset(Dataset):
             geotemp_features = torch.tensor(geotemp_features_array, dtype=torch.float32)
         
             if self.tab_num_columns or self.tab_categ_columns:
-                #return segments, tabular_features, geotemp_features, labels
+                # Non-empty image, segments, tabular_features, geotemp_features, labels
                 pass
             else:
-                #return segments, geotemp_features, labels
+                # Non-empty image segments, geotemp_features, labels
                 tabular_features = []
         else:
             if self.tab_num_columns:
-                #return segments, tabular_features, labels
+                # Non-empty image segments, tabular_features, labels
                 geotemp_features = []
             else:
-                #return segments, labels
+                # Non-empty image segments, labels
                 tabular_features, geotemp_features = [], []
             
         # Always return everything, even if some are empty
-        return segments, tabular_features, geotemp_features, labels
+        return image, segments, tabular_features, geotemp_features, labels
             
 class SegmentPatchesTabularDataset(Dataset):
     """
@@ -336,7 +342,8 @@ class SegmentPatchesTabularDataset(Dataset):
         geotemp_columns : list =None,
         tab_num_columns : list = None,
         tab_categ_columns : dict =None,
-        random_state : int = None
+        random_state : int = None,
+        image_size : tuple = (2048, 1024)
     ):
         """
         Initializes the SegmentsTabularDataset.
@@ -355,6 +362,7 @@ class SegmentPatchesTabularDataset(Dataset):
         self.tab_num_columns = tab_num_columns
         self.tab_categ_columns = tab_categ_columns
         self.random_state = random_state
+        self.image_size = image_size
         
         if self.normalize is None:
             self.normalize = transforms.Compose([
@@ -442,6 +450,10 @@ class SegmentPatchesTabularDataset(Dataset):
         if self.tab_num_columns or self.tab_categ_columns:
             tabular_features = torch.stack(tabular_features)
         labels = torch.tensor(labels, dtype=torch.long)
+        
+        # Resize and normalize the whole image (only needed when training end-to-end)
+        image = transforms.Resize(self.image_size)(image)
+        image = self.normalize(image)
 
         if self.geotemp_columns:
             # Extract geotemp features from the DataFrame (as numerical values)
@@ -449,21 +461,21 @@ class SegmentPatchesTabularDataset(Dataset):
             geotemp_features = torch.tensor(geotemp_features_array, dtype=torch.float32)
         
             if self.tab_num_columns or self.tab_categ_columns:
-                #return segments, tabular_features, geotemp_features, labels
+                # Non-empty image segments, tabular_features, geotemp_features, labels
                 pass
             else:
-                #return segments, geotemp_features, labels
+                # Non-empty image segments, geotemp_features, labels
                 tabular_features = []
         else:
             if self.tab_num_columns:
-                #return segments, tabular_features, labels
+                # Non-empty image segments, tabular_features, labels
                 geotemp_features = []
             else:
-                #return segments, labels
+                # Non-empty image segments, labels
                 tabular_features, geotemp_features = [], []
             
-        # Always return everything, even if some are None
-        return segment_patches, tabular_features, geotemp_features, labels
+        # Always return everything, even if some are empty
+        return image, segment_patches, tabular_features, geotemp_features, labels
     
     def _process_segment_to_patches(self, segment : Image):
         """
