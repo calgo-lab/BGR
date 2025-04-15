@@ -255,23 +255,23 @@ class SegmentsTabularDataset(Dataset):
             
             # Extract segment-specific tabular features
             if self.tab_num_columns:
-                segment_tabular_features_array = [row[feature][i] for feature in self.tab_num_columns]
-                segment_tabular_features = torch.tensor(segment_tabular_features_array, dtype=torch.float32)
-                tabular_features.append(segment_tabular_features)
+                num_tabular_features_array = [row[feature][i] for feature in self.tab_num_columns]
+                num_tabular_features = torch.tensor(num_tabular_features_array, dtype=torch.float32)
+                tabular_features.append(num_tabular_features)
                 
             # One hot encode categorical features
             if self.tab_categ_columns:
-                segment_tabular_features_array = [row[feature][i] for feature in self.tab_categ_columns.keys()]
+                categ_tabular_features_array = [row[feature][i] for feature in self.tab_categ_columns.keys()]
                 
                 # [2, 3, 5] -> [0, 0, 1, ... , 0, 0, 0, 1, ... , 0, 0, 0, 0, 0, 1, ...]
                 onehot_encoded_tabular_feature_array = np.zeros(sum(self.tab_categ_columns.values()))
                 cum_sum = 0
-                for idx, value in enumerate(segment_tabular_features_array):
+                for idx, value in enumerate(categ_tabular_features_array):
                     onehot_encoded_tabular_feature_array[cum_sum + value] = 1
                     cum_sum += list(self.tab_categ_columns.values())[idx]
                 
-                segment_onehot_tabular_features = torch.tensor(onehot_encoded_tabular_feature_array, dtype=torch.long)
-                tabular_features[i] = torch.cat([tabular_features[i], segment_onehot_tabular_features], dim=0)
+                onehot_tabular_features = torch.tensor(onehot_encoded_tabular_feature_array, dtype=torch.long)
+                tabular_features[i] = torch.cat([tabular_features[i], onehot_tabular_features], dim=0)
             
             # Extract the depth and label
             label = torch.tensor(row[self.label_column][i], dtype=torch.long)
@@ -283,7 +283,7 @@ class SegmentsTabularDataset(Dataset):
             segments.append(torch.zeros_like(segments[0]))
             
             # Pad segments tabular features with zeros
-            if self.tab_num_columns:
+            if self.tab_num_columns or self.tab_categ_columns:
                 tabular_features.append(torch.zeros_like(tabular_features[0]))
             
             # Pad labels with -1
@@ -291,7 +291,7 @@ class SegmentsTabularDataset(Dataset):
 
         # Convert segments, segments tabular features and labels to tensors
         segments = torch.stack(segments)
-        if self.tab_num_columns:
+        if self.tab_num_columns or self.tab_categ_columns:
             tabular_features = torch.stack(tabular_features)
         labels = torch.tensor(labels, dtype=torch.long)
 
@@ -300,15 +300,22 @@ class SegmentsTabularDataset(Dataset):
             geotemp_features_array = row[self.geotemp_columns].astype(float).values
             geotemp_features = torch.tensor(geotemp_features_array, dtype=torch.float32)
         
-            if self.tab_num_columns:
-                return segments, tabular_features, geotemp_features, labels
+            if self.tab_num_columns or self.tab_categ_columns:
+                #return segments, tabular_features, geotemp_features, labels
+                pass
             else:
-                return segments, geotemp_features, labels
+                #return segments, geotemp_features, labels
+                tabular_features = []
         else:
             if self.tab_num_columns:
-                return segments, tabular_features, labels
+                #return segments, tabular_features, labels
+                geotemp_features = []
             else:
-                return segments, labels
+                #return segments, labels
+                tabular_features, geotemp_features = [], []
+            
+        # Always return everything, even if some are empty
+        return segments, tabular_features, geotemp_features, labels
             
 class SegmentPatchesTabularDataset(Dataset):
     """
@@ -396,23 +403,23 @@ class SegmentPatchesTabularDataset(Dataset):
             
             # Extract segment-specific tabular features
             if self.tab_num_columns:
-                segment_tabular_features_array = [row[feature][i] for feature in self.tab_num_columns]
-                segment_tabular_features = torch.tensor(segment_tabular_features_array, dtype=torch.float32)
-                tabular_features.append(segment_tabular_features)
+                num_tabular_features_array = [row[feature][i] for feature in self.tab_num_columns]
+                num_tabular_features = torch.tensor(num_tabular_features_array, dtype=torch.float32)
+                tabular_features.append(num_tabular_features)
                 
             # One hot encode categorical features
             if self.tab_categ_columns:
-                segment_tabular_features_array = [row[feature][i] for feature in self.tab_categ_columns.keys()]
+                categ_tabular_features_array = [row[feature][i] for feature in self.tab_categ_columns.keys()]
                 
                 # [2, 3, 5] -> [0, 0, 1, ... , 0, 0, 0, 1, ... , 0, 0, 0, 0, 0, 1, ...]
                 onehot_encoded_tabular_feature_array = np.zeros(sum(self.tab_categ_columns.values()))
                 cum_sum = 0
-                for idx, value in enumerate(segment_tabular_features_array):
+                for idx, value in enumerate(categ_tabular_features_array):
                     onehot_encoded_tabular_feature_array[cum_sum + value] = 1
                     cum_sum += list(self.tab_categ_columns.values())[idx]
                 
-                segment_onehot_tabular_features = torch.tensor(onehot_encoded_tabular_feature_array, dtype=torch.long)
-                tabular_features[i] = torch.cat([tabular_features[i], segment_onehot_tabular_features], dim=0)
+                onehot_tabular_features = torch.tensor(onehot_encoded_tabular_feature_array, dtype=torch.long)
+                tabular_features[i] = torch.cat([tabular_features[i], onehot_tabular_features], dim=0)
             
             # Extract the depth and label
             label = torch.tensor(row[self.label_column][i], dtype=torch.long)
@@ -424,7 +431,7 @@ class SegmentPatchesTabularDataset(Dataset):
             segment_patches.append(torch.zeros_like(segment_patches[0]))
             
             # Pad segments tabular features with zeros
-            if self.tab_num_columns:
+            if self.tab_num_columns or self.tab_categ_columns:
                 tabular_features.append(torch.zeros_like(tabular_features[0]))
             
             # Pad labels with -1
@@ -432,7 +439,7 @@ class SegmentPatchesTabularDataset(Dataset):
 
         # Convert segments, segments tabular features and labels to tensors
         segment_patches = torch.stack(segment_patches)
-        if self.tab_num_columns:
+        if self.tab_num_columns or self.tab_categ_columns:
             tabular_features = torch.stack(tabular_features)
         labels = torch.tensor(labels, dtype=torch.long)
 
@@ -441,15 +448,22 @@ class SegmentPatchesTabularDataset(Dataset):
             geotemp_features_array = row[self.geotemp_columns].astype(float).values
             geotemp_features = torch.tensor(geotemp_features_array, dtype=torch.float32)
         
-            if self.tab_num_columns:
-                return segment_patches, tabular_features, geotemp_features, labels
+            if self.tab_num_columns or self.tab_categ_columns:
+                #return segments, tabular_features, geotemp_features, labels
+                pass
             else:
-                return segment_patches, geotemp_features, labels
+                #return segments, geotemp_features, labels
+                tabular_features = []
         else:
             if self.tab_num_columns:
-                return segment_patches, tabular_features, labels
+                #return segments, tabular_features, labels
+                geotemp_features = []
             else:
-                return segment_patches, labels
+                #return segments, labels
+                tabular_features, geotemp_features = [], []
+            
+        # Always return everything, even if some are None
+        return segment_patches, tabular_features, geotemp_features, labels
     
     def _process_segment_to_patches(self, segment : Image):
         """
