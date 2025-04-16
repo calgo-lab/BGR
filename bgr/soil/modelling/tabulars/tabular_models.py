@@ -12,7 +12,7 @@ class SimpleTabularModel(nn.Module):
         segment_encoder_output_dim : int = 512,
         geotemp_output_dim : int = 256,
         patch_size : int = 512,
-        predictor_hidden_dim : int = 1024,
+        rnn_hidden_dim : int = 1024,
         num_lstm_layers : int = 2,
         predefined_random_patches : bool = False
         ):
@@ -35,7 +35,7 @@ class SimpleTabularModel(nn.Module):
             self.tabular_predictors[key] = LSTMTabularPredictor(
                 input_dim=input_dim,
                 output_dim=output_dim,
-                hidden_dim=predictor_hidden_dim,
+                hidden_dim=rnn_hidden_dim,
                 num_lstm_layers=num_lstm_layers
             )
         

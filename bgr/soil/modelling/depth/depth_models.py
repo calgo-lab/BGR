@@ -7,7 +7,7 @@ from bgr.soil.modelling.image_modules import PatchCNNEncoder, ResNetPatchEncoder
 class SimpleDepthModel(nn.Module):
     def __init__(self,
                 geo_temp_input_dim : int, 
-                geo_temp_output_dim : int = 32, # params for geotemp encoder
+                geo_temp_output_dim : int = 256, # params for geotemp encoder
                 image_encoder_output_dim : int = 512,
                 max_seq_len : int = 10, 
                 stop_token : float = 1.0,
@@ -26,8 +26,7 @@ class SimpleDepthModel(nn.Module):
             self.image_encoder = PatchCNNEncoder(output_dim=image_encoder_output_dim, patch_size=patch_size, patch_stride=patch_size)
         self.geo_temp_encoder = GeoTemporalEncoder(geo_temp_input_dim, geo_temp_output_dim)
 
-        self.depth_marker_predictor = LSTMDepthMarkerPredictor(image_encoder_output_dim + geo_temp_output_dim,
-                                                               rnn_hidden_dim, max_seq_len, stop_token)
+        self.depth_marker_predictor = LSTMDepthMarkerPredictor(image_encoder_output_dim + geo_temp_output_dim, rnn_hidden_dim, max_seq_len, stop_token)
 
     def forward(self, images, geo_temp):
         # Extract image + geotemp features, then concatenate them

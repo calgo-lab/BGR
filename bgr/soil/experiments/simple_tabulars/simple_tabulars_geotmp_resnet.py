@@ -225,7 +225,7 @@ class SimpleTabularsGeotempsResNet(Experiment):
             segment_encoder_output_dim=self.hyperparameters['segment_encoder_output_dim'],
             geotemp_output_dim=self.hyperparameters['geotemp_output_dim'],
             #patch_size=self.hyperparameters['patch_size'], # only used for PatchCNN
-            predictor_hidden_dim=self.hyperparameters['predictor_hidden_dim'],
+            rnn_hidden_dim=self.hyperparameters['predictor_hidden_dim'],
             num_lstm_layers=self.hyperparameters['num_lstm_layers'],
             predefined_random_patches=True
         )
