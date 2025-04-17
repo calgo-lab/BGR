@@ -16,6 +16,7 @@ from .simple_horizon.simple_horizon_classification_lstm_embed_geotmp_mlp_tab_mlp
 from .simple_horizon.simple_horizon_classification_lstm_shortpath_geotmp_mlp_tab_mlp_resnet import SimpleHorizonClassificationWithLSTMShortPathGeotempsMLPTabMLPResNet
 from .simple_tabulars.simple_tabulars_geotmp_resnet import SimpleTabularsGeotempsResNet
 from .simple_tabulars.simple_tabulars_geotmp import SimpleTabularsGeotemps
+from .end2end.end2end_lstm_embed import End2EndLSTMEmbed
 
 def get_experiment(experiment_type, training_args, target, dataprocessor) -> Experiment:    
     if experiment_type == "simple_depths_geotmp":
@@ -52,6 +53,8 @@ def get_experiment(experiment_type, training_args, target, dataprocessor) -> Exp
         return SimpleTabularsGeotempsResNet(training_args, target, dataprocessor)
     elif experiment_type == "simple_tabulars_geotmp":
         return SimpleTabularsGeotemps(training_args, target, dataprocessor)
+    elif experiment_type == "end2end_lstm_embed":
+        return End2EndLSTMEmbed(training_args, target, dataprocessor)
     else:
         raise ValueError(f"Unknown experiment type: {experiment_type}")
     
@@ -90,5 +93,7 @@ def get_experiment_hyperparameters(experiment_type) -> dict:
         return SimpleTabularsGeotempsResNet.get_experiment_hyperparameters()
     elif experiment_type == "simple_tabulars_geotmp":
         return SimpleTabularsGeotemps.get_experiment_hyperparameters()
+    elif experiment_type == "end2end_lstm_embed":
+        return End2EndLSTMEmbed.get_experiment_hyperparameters()
     else:
         raise ValueError(f"Unknown experiment type: {experiment_type}")

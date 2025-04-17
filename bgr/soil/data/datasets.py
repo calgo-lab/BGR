@@ -281,14 +281,14 @@ class SegmentsTabularDataset(Dataset):
         
         # Pad segments, segments tabular and labels to ensure consistent sizes
         while len(segments) < self.max_segments:
-            # Pad segments images with zeros
+            # Pad segments images with zero-images
             segments.append(torch.zeros_like(segments[0]))
             
-            # Pad segments tabular features with zeros
+            # Pad segments tabular features with zero vectors (instead of one-hots)
             if self.tab_num_columns or self.tab_categ_columns:
                 tabular_features.append(torch.zeros_like(tabular_features[0]))
             
-            # Pad labels with -1
+            # Pad labels with -1 (instead of >= 0)
             labels.append(torch.tensor(-1, dtype=torch.long))  # Use -1 as a padding label
 
         # Convert segments, segments tabular features and labels to tensors

@@ -50,8 +50,8 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment)
         
         self.label_embeddings_tensor = torch.tensor(self.dataprocessor.embeddings_dict['embedding'], device=self.training_args.device).float()
         self.cosine_loss = nn.CosineEmbeddingLoss()
-        self.topk = 5
-        self.horizon_topk_acc = lambda k : TopKHorizonAccuracy(self.label_embeddings_tensor, k=k)
+        self.hor_topk = 5
+        self.hor_topk_acc = lambda k : TopKHorizonAccuracy(self.label_embeddings_tensor, k=k)
         self.f1_average = 'macro'
         self.image_normalization = transforms.Compose([
             transforms.ToTensor(),
@@ -64,9 +64,9 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment)
             setattr(self, key, self.training_args.hyperparameters.get(key, defaults[key]))
             
         # Initialize the labels and predictions dictionaries for confusion matrix
-        self.possible_labels = list(range(self.label_embeddings_tensor.size(0)))
-        self.labels = {'train': None, 'val': None, 'test': None}
-        self.predictions = {'train': None, 'val': None, 'test': None}
+        self.hor_possible_labels = list(range(self.label_embeddings_tensor.size(0)))
+        self.hor_labels = {'train': None, 'val': None, 'test': None}
+        self.hor_predictions = {'train': None, 'val': None, 'test': None}
     
     def train_and_validate(self,
         train_df: pd.DataFrame,
@@ -170,21 +170,21 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment)
                 Training:
                 - Cosine Loss: {avg_train_loss:.4f}
                 - Accuracy: {avg_train_acc:.4f}
-                - Top-{self.topk} Accuracy: {avg_train_topk_acc:.4f}
+                - Top-{self.hor_topk} Accuracy: {avg_train_topk_acc:.4f}
                 - Precision: {train_precision:.4f}
                 - Recall: {train_recall:.4f}
-                - Precision@{self.topk}: {train_precision_at_k:.4f}
-                - Recall@{self.topk}: {train_recall_at_k:.4f}
+                - Precision@{self.hor_topk}: {train_precision_at_k:.4f}
+                - Recall@{self.hor_topk}: {train_recall_at_k:.4f}
                 - F1 Score: {train_f1_score:.4f}
                 
                 Validation:
                 - Cosine Loss: {avg_val_loss:.4f}
                 - Accuracy: {avg_val_acc:.4f}
-                - Top-{self.topk} Accuracy: {avg_val_topk_acc:.4f}
+                - Top-{self.hor_topk} Accuracy: {avg_val_topk_acc:.4f}
                 - Precision: {val_precision:.4f}
                 - Recall: {val_recall:.4f}
-                - Precision@{self.topk}: {val_precision_at_k:.4f}
-                - Recall@{self.topk}: {val_recall_at_k:.4f}
+                - Precision@{self.hor_topk}: {val_precision_at_k:.4f}
+                - Recall@{self.hor_topk}: {val_recall_at_k:.4f}
                 - F1 Score: {val_f1_score:.4f}
                 
                 Current Learning Rate: {current_lr}
@@ -258,11 +258,11 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment)
                 Testing:
                 - Cosine Loss: {avg_test_loss:.4f}
                 - Accuracy: {avg_test_accuracy:.4f}
-                - Top-{self.topk} Accuracy: {avg_test_topk_accuracy:.4f}
+                - Top-{self.hor_topk} Accuracy: {avg_test_topk_accuracy:.4f}
                 - Precision: {test_precision:.4f}
                 - Recall: {test_recall:.4f}
-                - Precision@{self.topk}: {avg_test_precision_at_k:.4f}
-                - Recall@{self.topk}: {avg_test_recall_at_k:.4f}
+                - Precision@{self.hor_topk}: {avg_test_precision_at_k:.4f}
+                - Recall@{self.hor_topk}: {avg_test_recall_at_k:.4f}
                 - F1 Score: {test_f1_score:.4f}
                 --------------------------------
                 """
@@ -293,7 +293,7 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment)
             'Accuracy': (self.train_acc_history, self.val_acc_history)
         }
         topk_acc_histories = {
-            f'Top-{self.topk} Accuracy': (self.train_topk_acc_history, self.val_topk_acc_history)
+            f'Top-{self.hor_topk} Accuracy': (self.train_topk_acc_history, self.val_topk_acc_history)
         }
         f1_score_histories = {
             'F1 Score': (self.train_f1_score_history, self.val_f1_score_history)
@@ -347,17 +347,17 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment)
             wandb.log({"Losses and Accuracies": wandb.Image(figure)})
         
         # Plot confusion matrices
-        self._plot_confusion_matrix(labels=self.labels['train'], predictions=self.predictions['train'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='train')
-        self._plot_confusion_matrix(labels=self.labels['val'], predictions=self.predictions['val'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='val')
-        self._plot_confusion_matrix(labels=self.labels['test'], predictions=self.predictions['test'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='test')
+        self._plot_confusion_matrix(labels=self.hor_labels['train'], predictions=self.hor_predictions['train'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='train')
+        self._plot_confusion_matrix(labels=self.hor_labels['val'], predictions=self.hor_predictions['val'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='val')
+        self._plot_confusion_matrix(labels=self.hor_labels['test'], predictions=self.hor_predictions['test'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='test')
             
     def _train_model(self, train_loader, device, model, optimizer):
         train_loss_total = 0.0
-        train_correct = 0
-        train_topk_correct = 0
+        train_horizon_correct = 0
+        train_horizon_topk_correct = 0
         
-        all_topk_predictions = []
-        all_labels = []
+        all_topk_horizon_predictions = []
+        all_horizon_labels = []
         
         train_loader_tqdm = tqdm(train_loader, desc="Training", leave=False)
         for batch in train_loader_tqdm:
@@ -366,13 +366,15 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment)
 
             optimizer.zero_grad() # otherwise, PyTorch accumulates the gradients during backprop
 
-            # Predict depth markers (as padded tensors)
+            # Predict horizon embeddings (as padded tensors)
             padded_pred_horizon_embeddings = model(segments=segments, segments_tabular_features=segments_tabular_features, geo_temp_features=geotemp_features[:, 1:]) # 'index' column not used in model
                 
             true_horizon_embeddings = torch.stack([torch.tensor(self.dataprocessor.embeddings_dict['embedding'][lab.item()]) for lab in padded_true_horizon_indices.view(-1) if lab != -1]).to(device)
+            
             pred_horizon_embeddings = torch.stack([pred for pred, lab in zip(padded_pred_horizon_embeddings.view(-1, padded_pred_horizon_embeddings.size(-1)), padded_true_horizon_indices.view(-1)) if lab != -1]).to(device)
+            
             true_horizon_indices = padded_true_horizon_indices.view(-1)[padded_true_horizon_indices.view(-1) != -1]
-            pred_topk_horizon_indices = torch.topk(torch.matmul(pred_horizon_embeddings, self.label_embeddings_tensor.T), k=self.topk, dim=1).indices
+            pred_topk_horizon_indices = torch.topk(torch.matmul(pred_horizon_embeddings, self.label_embeddings_tensor.T), k=self.hor_topk, dim=1).indices
                 
             # Normalize embeddings for the cosine loss, true embeddings are already normalized
             pred_horizon_embeddings = F.normalize(pred_horizon_embeddings, p=2, dim=1)
@@ -387,38 +389,38 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment)
 
             # Calculate batch losses to total loss
             train_loss_total += train_loss.item()
-            train_correct += self.horizon_topk_acc(1)(pred_horizon_embeddings, true_horizon_indices)
-            train_topk_correct += self.horizon_topk_acc(self.topk)(pred_horizon_embeddings, true_horizon_indices)
+            train_horizon_correct += self.hor_topk_acc(1)(pred_horizon_embeddings, true_horizon_indices)
+            train_horizon_topk_correct += self.hor_topk_acc(self.hor_topk)(pred_horizon_embeddings, true_horizon_indices)
             
             # Append topk predictions and labels for Precision@k, Recall@k and F1 score
-            all_topk_predictions.append(pred_topk_horizon_indices.cpu())
-            all_labels.append(true_horizon_indices.cpu())
+            all_topk_horizon_predictions.append(pred_topk_horizon_indices.cpu())
+            all_horizon_labels.append(true_horizon_indices.cpu())
 
             train_loader_tqdm.set_postfix(loss=train_loss.item())
 
         # Average losses over the batches
         avg_train_loss = train_loss_total / len(train_loader)
-        avg_train_acc = train_correct / len(train_loader)
-        avg_train_topk_acc = train_topk_correct / len(train_loader)
+        train_horizon_acc = train_horizon_correct / len(train_loader)
+        train_horizon_topk_acc = train_horizon_topk_correct / len(train_loader)
         
         # Calculate precision@k, recall@k and F1 score
-        labels = torch.cat(all_labels)
-        top1_predictions = torch.cat(all_topk_predictions)[:, 0]
-        topk_predictions = torch.cat(all_topk_predictions)
+        all_horizon_labels = torch.cat(all_horizon_labels)
+        top1_horizon_predictions = torch.cat(all_topk_horizon_predictions)[:, 0]
+        topk_horizon_predictions = torch.cat(all_topk_horizon_predictions)
         
-        train_precision = precision_score(labels.numpy(), top1_predictions.numpy(), labels=self.possible_labels, average=self.f1_average, zero_division=0)
-        train_recall = recall_score(labels.numpy(), top1_predictions.numpy(), labels=self.possible_labels, average=self.f1_average, zero_division=0)
-        train_precision_at_k, train_recall_at_k = precision_recall_at_k(labels, topk_predictions, all_labels=self.possible_labels, average=self.f1_average)
-        train_f1_score = f1_score(labels.numpy(), top1_predictions.numpy(), labels=self.possible_labels, average=self.f1_average, zero_division=0)
+        train_precision = precision_score(all_horizon_labels.numpy(), top1_horizon_predictions.numpy(), labels=self.hor_possible_labels, average=self.f1_average, zero_division=0)
+        train_recall = recall_score(all_horizon_labels.numpy(), top1_horizon_predictions.numpy(), labels=self.hor_possible_labels, average=self.f1_average, zero_division=0)
+        train_precision_at_k, train_recall_at_k = precision_recall_at_k(all_horizon_labels, topk_horizon_predictions, all_labels=self.hor_possible_labels, average=self.f1_average)
+        train_f1_score = f1_score(all_horizon_labels.numpy(), top1_horizon_predictions.numpy(), labels=self.hor_possible_labels, average=self.f1_average, zero_division=0)
         
         # Store labels and predictions for confusion matrix
-        self.labels['train'] = labels.numpy()
-        self.predictions['train'] = top1_predictions.numpy()
+        self.hor_labels['train'] = all_horizon_labels.numpy()
+        self.hor_predictions['train'] = top1_horizon_predictions.numpy()
         
         return \
             avg_train_loss, \
-            avg_train_acc, \
-            avg_train_topk_acc, \
+            train_horizon_acc, \
+            train_horizon_topk_acc, \
             train_precision, \
             train_recall, \
             train_precision_at_k, \
@@ -430,8 +432,8 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment)
         eval_correct = 0
         eval_topk_correct = 0
         
-        all_topk_predictions = []
-        all_labels = []
+        all_horizon_topk_predictions = []
+        all_horizon_labels = []
         
         eval_loader_tqdm = tqdm(eval_loader, desc="Evaluating", leave=False)
         with torch.no_grad():
@@ -445,7 +447,7 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment)
                 true_horizon_embeddings = torch.stack([torch.tensor(self.dataprocessor.embeddings_dict['embedding'][lab.item()]) for lab in padded_true_horizon_indices.view(-1) if lab != -1]).to(device)
                 pred_horizon_embeddings = torch.stack([pred for pred, lab in zip(padded_pred_horizon_embeddings.view(-1, padded_pred_horizon_embeddings.size(-1)), padded_true_horizon_indices.view(-1)) if lab != -1]).to(device)
                 true_horizon_indices = padded_true_horizon_indices.view(-1)[padded_true_horizon_indices.view(-1) != -1]
-                pred_topk_horizon_indices = torch.topk(torch.matmul(pred_horizon_embeddings, self.label_embeddings_tensor.T), self.topk, dim=1).indices
+                pred_topk_horizon_indices = torch.topk(torch.matmul(pred_horizon_embeddings, self.label_embeddings_tensor.T), self.hor_topk, dim=1).indices
                     
                 # Normalize embeddings for the cosine loss, true embeddings are already normalized
                 pred_horizon_embeddings = F.normalize(pred_horizon_embeddings, p=2, dim=1)
@@ -457,12 +459,12 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment)
 
                 # Add batch losses to total loss
                 eval_loss_total += val_loss.item()
-                eval_correct += self.horizon_topk_acc(1)(pred_horizon_embeddings, true_horizon_indices)
-                eval_topk_correct += self.horizon_topk_acc(self.topk)(pred_horizon_embeddings, true_horizon_indices)
+                eval_correct += self.hor_topk_acc(1)(pred_horizon_embeddings, true_horizon_indices)
+                eval_topk_correct += self.hor_topk_acc(self.hor_topk)(pred_horizon_embeddings, true_horizon_indices)
                 
                 # Append topk predictions and labels for Precision@k, Recall@k and F1 score
-                all_topk_predictions.append(pred_topk_horizon_indices.cpu())
-                all_labels.append(true_horizon_indices.cpu())
+                all_horizon_topk_predictions.append(pred_topk_horizon_indices.cpu())
+                all_horizon_labels.append(true_horizon_indices.cpu())
             
             # Average losses over the batches
             avg_eval_loss = eval_loss_total / len(eval_loader)
@@ -470,18 +472,18 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLP(Experiment)
             avg_eval_topk_acc = eval_topk_correct / len(eval_loader)
             
             # Calculate precision@k, recall@k and F1 score
-            labels = torch.cat(all_labels)
-            top1_predictions = torch.cat(all_topk_predictions)[:, 0]
-            topk_predictions = torch.cat(all_topk_predictions)
+            all_horizon_labels = torch.cat(all_horizon_labels)
+            top1_horizon_predictions = torch.cat(all_horizon_topk_predictions)[:, 0]
+            topk_horizon_predictions = torch.cat(all_horizon_topk_predictions)
             
-            eval_precision = precision_score(labels.numpy(), top1_predictions.numpy(), labels=self.possible_labels, average=self.f1_average, zero_division=0)
-            eval_recall = recall_score(labels.numpy(), top1_predictions.numpy(), labels=self.possible_labels, average=self.f1_average, zero_division=0)
-            eval_precision_at_k, eval_recall_at_k = precision_recall_at_k(labels, topk_predictions, all_labels=self.possible_labels, average=self.f1_average)
-            eval_f1_score = f1_score(labels.numpy(), top1_predictions.numpy(), labels=self.possible_labels, average=self.f1_average, zero_division=0)
+            eval_precision = precision_score(all_horizon_labels.numpy(), top1_horizon_predictions.numpy(), labels=self.hor_possible_labels, average=self.f1_average, zero_division=0)
+            eval_recall = recall_score(all_horizon_labels.numpy(), top1_horizon_predictions.numpy(), labels=self.hor_possible_labels, average=self.f1_average, zero_division=0)
+            eval_precision_at_k, eval_recall_at_k = precision_recall_at_k(all_horizon_labels, topk_horizon_predictions, all_labels=self.hor_possible_labels, average=self.f1_average)
+            eval_f1_score = f1_score(all_horizon_labels.numpy(), top1_horizon_predictions.numpy(), labels=self.hor_possible_labels, average=self.f1_average, zero_division=0)
             
             # Store labels and predictions for confusion matrix
-            self.labels[mode] = labels.numpy()
-            self.predictions[mode] = top1_predictions.numpy()
+            self.hor_labels[mode] = all_horizon_labels.numpy()
+            self.hor_predictions[mode] = top1_horizon_predictions.numpy()
             
         return \
             avg_eval_loss, \

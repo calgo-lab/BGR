@@ -79,7 +79,7 @@ class SoilNet_LSTM(nn.Module):
         segments_tabular_input_dim = 0 # sum of all tabular output dims (needed for the extra MLP layer below)
         for key, output_dim in self.tabular_output_dim_dict.items():                        
             self.tabular_predictors[key] = LSTMTabularPredictor(
-                input_dim = self.segment_encoder_output_dim + self.geotemp_output_dim, # all get the same concatenated input segment_geotemp vector
+                input_dim = self.segment_encoder_output_dim + self.geo_temp_output_dim, # all get the same concatenated input segment_geotemp vector
                 output_dim = output_dim, # each has a different output dim, depending on how many classes it predicts
                 hidden_dim = self.tab_rnn_hidden_dim,
                 num_lstm_layers = self.tab_num_lstm_layers

@@ -262,10 +262,10 @@ class SimpleDepthsGeotemps(Experiment):
                                             device=device)
 
             # Predict depth markers (as padded tensors)
-            pred_depths = model(images=images, geo_temp=geotemp_features[:, 1:]) # 'index' column not used in model
+            padded_pred_depths = model(images=images, geo_temp=geotemp_features[:, 1:]) # 'index' column not used in model
 
             # Compute individual losses, then sum them together for backprop
-            train_loss = self.depth_loss(pred_depths, padded_true_depths)
+            train_loss = self.depth_loss(padded_pred_depths, padded_true_depths)
             train_loss.backward()
             clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
@@ -274,7 +274,7 @@ class SimpleDepthsGeotemps(Experiment):
             train_loss_total += train_loss.item()
 
             # Calculate IoU
-            train_iou += depth_iou(pred_depths, padded_true_depths, model.stop_token)
+            train_iou += depth_iou(padded_pred_depths, padded_true_depths, model.stop_token)
 
             train_loader_tqdm.set_postfix(loss=train_loss.item())
 

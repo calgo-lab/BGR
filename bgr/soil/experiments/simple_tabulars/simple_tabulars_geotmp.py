@@ -40,7 +40,7 @@ class SimpleTabularsGeotemps(Experiment):
         ])
         
         # Tabular soil features (numerical and categorical)
-        self.segments_tabular_feature_columns = ['Steine']
+        self.segments_tabular_num_feature_columns = ['Steine']
         self.segments_tabular_categ_feature_columns = {key : value 
             for key, value in dataprocessor.tabulars_output_dim_dict.items() 
                 if key in [
@@ -55,7 +55,7 @@ class SimpleTabularsGeotemps(Experiment):
         
         self.cross_entropy_loss = nn.CrossEntropyLoss()
         self.mse_loss = nn.MSELoss()
-        self.topk = 3
+        self.tab_topk = 3
         self.class_average = 'macro'
         
         # Retrieve the experiment hyperparameters
@@ -76,7 +76,7 @@ class SimpleTabularsGeotemps(Experiment):
             normalize=self.image_normalization,
             label_column=self.target,
             geotemp_columns=self.dataprocessor.geotemp_img_infos[1:-1], # without index and img path
-            tab_num_columns=self.segments_tabular_feature_columns,
+            tab_num_columns=self.segments_tabular_num_feature_columns,
             tab_categ_columns=self.segments_tabular_categ_feature_columns
         )
         train_loader = DataLoader(train_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
@@ -86,7 +86,7 @@ class SimpleTabularsGeotemps(Experiment):
             normalize=self.image_normalization,
             label_column=self.target,
             geotemp_columns=self.dataprocessor.geotemp_img_infos[1:-1], # without index and img path
-            tab_num_columns=self.segments_tabular_feature_columns,
+            tab_num_columns=self.segments_tabular_num_feature_columns,
             tab_categ_columns=self.segments_tabular_categ_feature_columns
         )
         val_loader = DataLoader(val_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
@@ -180,7 +180,7 @@ class SimpleTabularsGeotemps(Experiment):
             normalize=self.image_normalization,
             label_column=self.target,
             geotemp_columns=self.dataprocessor.geotemp_img_infos[1:-1], # without index and img path
-            tab_num_columns=self.segments_tabular_feature_columns,
+            tab_num_columns=self.segments_tabular_num_feature_columns,
             tab_categ_columns=self.segments_tabular_categ_feature_columns
         )
         
@@ -335,8 +335,8 @@ class SimpleTabularsGeotemps(Experiment):
             
             optimizer.zero_grad()
             
-            padded_tabular_predictions = model(segments, geotemp_features)
-            tabular_predictions = {key: value[mask] for key, value in padded_tabular_predictions.items()}
+            padded_pred_tabulars = model(segments, geotemp_features)
+            tabular_predictions = {key: value[mask] for key, value in padded_pred_tabulars.items()}
             
             stones_predictions = tabular_predictions['Steine']
             soiltype_predictions = tabular_predictions['Bodenart']
@@ -386,11 +386,11 @@ class SimpleTabularsGeotemps(Experiment):
             train_rooting_loss += rooting_loss.item()
             
             # Top-K predictions
-            horizon_indices, topk_soiltype_predictions = torch.topk(soiltype_predictions, self.topk)
-            horizon_indices, topk_soilcolor_predictions = torch.topk(soilcolor_predictions, self.topk)
-            horizon_indices, topk_carbonate_predictions = torch.topk(carbonate_predictions, self.topk)
-            horizon_indices, topk_humus_predictions = torch.topk(humus_predictions, self.topk)
-            horizon_indices, topk_rooting_predictions = torch.topk(rooting_predictions, self.topk)
+            horizon_indices, topk_soiltype_predictions = torch.topk(soiltype_predictions, self.tab_topk)
+            horizon_indices, topk_soilcolor_predictions = torch.topk(soilcolor_predictions, self.tab_topk)
+            horizon_indices, topk_carbonate_predictions = torch.topk(carbonate_predictions, self.tab_topk)
+            horizon_indices, topk_humus_predictions = torch.topk(humus_predictions, self.tab_topk)
+            horizon_indices, topk_rooting_predictions = torch.topk(rooting_predictions, self.tab_topk)
             
             # Add predictions and true values to lists
             self.stones_predictions["train"].append(stones_predictions.detach().cpu())
@@ -580,11 +580,11 @@ class SimpleTabularsGeotemps(Experiment):
                 eval_rooting_loss += rooting_loss.item()
 
                 # Top-K predictions
-                horizon_indices, topk_soiltype_predictions = torch.topk(soiltype_predictions, self.topk)
-                horizon_indices, topk_soilcolor_predictions = torch.topk(soilcolor_predictions, self.topk)
-                horizon_indices, topk_carbonate_predictions = torch.topk(carbonate_predictions, self.topk)
-                horizon_indices, topk_humus_predictions = torch.topk(humus_predictions, self.topk)
-                horizon_indices, topk_rooting_predictions = torch.topk(rooting_predictions, self.topk)
+                horizon_indices, topk_soiltype_predictions = torch.topk(soiltype_predictions, self.tab_topk)
+                horizon_indices, topk_soilcolor_predictions = torch.topk(soilcolor_predictions, self.tab_topk)
+                horizon_indices, topk_carbonate_predictions = torch.topk(carbonate_predictions, self.tab_topk)
+                horizon_indices, topk_humus_predictions = torch.topk(humus_predictions, self.tab_topk)
+                horizon_indices, topk_rooting_predictions = torch.topk(rooting_predictions, self.tab_topk)
 
                 # Add predictions and true values to lists
                 self.stones_predictions[mode].append(stones_predictions.detach().cpu())
@@ -708,9 +708,9 @@ class SimpleTabularsGeotemps(Experiment):
             "F1" : "f1",
             "Precision" : "precision",
             "Recall" : "recall",
-            f"Top-{self.topk} Acc." : "top_k_accuracy",
-            f"Prec. @{self.topk}" : "precision_at_k",
-            f"Recall @{self.topk}" : "recall_at_k",
+            f"Top-{self.tab_topk} Acc." : "top_k_accuracy",
+            f"Prec. @{self.tab_topk}" : "precision_at_k",
+            f"Recall @{self.tab_topk}" : "recall_at_k",
         }
         
         categories = {
