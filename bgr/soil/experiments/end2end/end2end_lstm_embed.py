@@ -293,15 +293,15 @@ class End2EndLSTMEmbed(Experiment):
             'Total':      [epoch_metrics.get('val_loss', float('nan')) for epoch_metrics in self.histories]
         }
         all_train_metrics = {
-            'IoU': [epoch_metrics.get('train_IoU', float('nan')) for epoch_metrics in self.histories],
+            'IoU': [epoch_metrics.get('train_Depth_IoU', float('nan')) for epoch_metrics in self.histories],
             'Accuracy': [epoch_metrics.get('train_Horizon_accuracy', float('nan')) for epoch_metrics in self.histories],
-            f'Top-{self.hor_topk} Accuracy': [epoch_metrics.get('train_Horizon_top_k_accuracy', float('nan')) for epoch_metrics in self.histories],
+            f'Top-{self.hor_topk} Accuracy': [epoch_metrics.get('train_Horizon_topk_accuracy', float('nan')) for epoch_metrics in self.histories],
             'F1 Score': [epoch_metrics.get('train_Horizon_f1', float('nan')) for epoch_metrics in self.histories]
         }
         all_val_metrics = {
-            'IoU': [epoch_metrics.get('val_IoU', float('nan')) for epoch_metrics in self.histories],
+            'IoU': [epoch_metrics.get('val_Depth_IoU', float('nan')) for epoch_metrics in self.histories],
             'Accuracy': [epoch_metrics.get('val_Horizon_accuracy', float('nan')) for epoch_metrics in self.histories],
-            f'Top-{self.hor_topk} Accuracy': [epoch_metrics.get('val_Horizon_top_k_accuracy', float('nan')) for epoch_metrics in self.histories],
+            f'Top-{self.hor_topk} Accuracy': [epoch_metrics.get('val_Horizon_topk_accuracy', float('nan')) for epoch_metrics in self.histories],
             'F1 Score': [epoch_metrics.get('val_Horizon_f1', float('nan')) for epoch_metrics in self.histories]
         }
 
@@ -502,8 +502,8 @@ class End2EndLSTMEmbed(Experiment):
             same_class = torch.ones(pred_horizon_embeddings.size(0)).to(device)
             horizon_loss = self.cosine_loss(pred_horizon_embeddings, true_horizon_embeddings, same_class)
             
-            ## Total loss (sum of all losses)
-            total_loss = depth_loss + stones_loss + soiltype_loss + soilcolor_loss + carbonate_loss + humus_loss + rooting_loss + horizon_loss
+            ## Total loss (weighted sum of all losses)
+            total_loss = 10*depth_loss + stones_loss/10. + soiltype_loss + soilcolor_loss + carbonate_loss + humus_loss + rooting_loss + 10*horizon_loss
             
             # Backpropagation
             total_loss.backward()
@@ -610,7 +610,7 @@ class End2EndLSTMEmbed(Experiment):
         # Calculate metrics
         train_depth_metrics = {
             'train_Depth_loss' : train_depth_loss,
-            'train_IoU': train_iou.detach().cpu().numpy()
+            'train_Depth_IoU': train_iou.detach().cpu().numpy()
         }    
         train_stones_metrics = {
             'train_Steine_loss' : train_stones_loss
@@ -801,7 +801,7 @@ class End2EndLSTMEmbed(Experiment):
                 horizon_loss = self.cosine_loss(pred_horizon_embeddings, true_horizon_embeddings, same_class)
 
                 ## Total loss (sum of all losses)
-                total_loss = depth_loss + stones_loss + soiltype_loss + soilcolor_loss + carbonate_loss + humus_loss + rooting_loss + horizon_loss
+                total_loss = 10*depth_loss + stones_loss/10. + soiltype_loss + soilcolor_loss + carbonate_loss + humus_loss + rooting_loss + 10*horizon_loss
 
                 # Update running losses
                 total_eval_loss     += total_loss.item()
