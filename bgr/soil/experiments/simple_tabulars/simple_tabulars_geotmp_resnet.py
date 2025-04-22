@@ -75,9 +75,9 @@ class SimpleTabularsGeotempsResNet(Experiment):
             dataframe=train_df,
             normalize=self.image_normalization,
             label_column=self.target,
-            feature_columns=self.dataprocessor.geotemp_img_infos[1:-1], # without index and img path
-            segments_tab_num_feature_columns=self.segments_tabular_feature_columns,
-            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns,
+            geotemp_columns=self.dataprocessor.geotemp_img_infos[1:-1], # without index and img path
+            tab_num_columns=self.segments_tabular_feature_columns,
+            tab_categ_columns=self.segments_tabular_categ_feature_columns,
             segment_patch_number=self.hyperparameters['num_segment_patches']
         )
         train_loader = DataLoader(train_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
@@ -86,9 +86,9 @@ class SimpleTabularsGeotempsResNet(Experiment):
             dataframe=val_df,
             normalize=self.image_normalization,
             label_column=self.target,
-            feature_columns=self.dataprocessor.geotemp_img_infos[1:-1], # without index and img path
-            segments_tab_num_feature_columns=self.segments_tabular_feature_columns,
-            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns,
+            geotemp_columns=self.dataprocessor.geotemp_img_infos[1:-1], # without index and img path
+            tab_num_columns=self.segments_tabular_feature_columns,
+            tab_categ_columns=self.segments_tabular_categ_feature_columns,
             segment_patch_number=self.hyperparameters['num_segment_patches']
         )
         val_loader = DataLoader(val_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
@@ -181,9 +181,9 @@ class SimpleTabularsGeotempsResNet(Experiment):
             dataframe=test_df,
             normalize=self.image_normalization,
             label_column=self.target,
-            feature_columns=self.dataprocessor.geotemp_img_infos[1:-1], # without index and img path
-            segments_tab_num_feature_columns=self.segments_tabular_feature_columns,
-            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns,
+            geotemp_columns=self.dataprocessor.geotemp_img_infos[1:-1], # without index and img path
+            tab_num_columns=self.segments_tabular_feature_columns,
+            tab_categ_columns=self.segments_tabular_categ_feature_columns,
             segment_patch_number=self.hyperparameters['num_segment_patches']
         )
         
@@ -224,8 +224,8 @@ class SimpleTabularsGeotempsResNet(Experiment):
             geotemp_input_dim=len(self.dataprocessor.geotemp_img_infos) - 2, # without index and img path
             segment_encoder_output_dim=self.hyperparameters['segment_encoder_output_dim'],
             geotemp_output_dim=self.hyperparameters['geotemp_output_dim'],
-            patch_size=self.hyperparameters['patch_size'],
-            predictor_hidden_dim=self.hyperparameters['predictor_hidden_dim'],
+            #patch_size=self.hyperparameters['patch_size'], # only used for PatchCNN
+            rnn_hidden_dim=self.hyperparameters['predictor_hidden_dim'],
             num_lstm_layers=self.hyperparameters['num_lstm_layers'],
             predefined_random_patches=True
         )
@@ -330,7 +330,7 @@ class SimpleTabularsGeotempsResNet(Experiment):
         
         train_loader_tqdm = tqdm(train_loader, desc="Training", leave=False, unit="batch")
         for batch in train_loader_tqdm:
-            segments, padded_segments_tabulars_labels, geotemp_features, horizon_indices = batch
+            _, segments, padded_segments_tabulars_labels, geotemp_features, horizon_indices = batch # full image not needed
             segments, padded_segments_tabulars_labels, geotemp_features = segments.to(device), padded_segments_tabulars_labels.to(device), geotemp_features.to(device)
             
             # Mask for valid indices
@@ -530,7 +530,7 @@ class SimpleTabularsGeotempsResNet(Experiment):
         
         eval_loader_tqdm = tqdm(eval_loader, desc=f"{mode.capitalize()} Evaluation", leave=False, unit="batch")
         for batch in eval_loader_tqdm:
-            segments, padded_segments_tabulars_labels, geotemp_features, horizon_indices = batch
+            _, segments, padded_segments_tabulars_labels, geotemp_features, horizon_indices = batch # full image not needed
             segments, padded_segments_tabulars_labels, geotemp_features = segments.to(device), padded_segments_tabulars_labels.to(device), geotemp_features.to(device)
 
             # Mask for valid indices
@@ -744,7 +744,7 @@ class SimpleTabularsGeotempsResNet(Experiment):
             'num_segment_patches' : 48,
             'segment_encoder_output_dim': 512,
             'geotemp_output_dim': 256,
-            'patch_size': 512,
+            #'patch_size': 512, # only used for PatchCNN
             'predictor_hidden_dim': 1024,
             'num_lstm_layers': 2
         }

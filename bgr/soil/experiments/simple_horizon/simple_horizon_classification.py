@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 from bgr.soil.data.horizon_tabular_data import HorizonDataProcessor
 from bgr.soil.experiments import Experiment
-from bgr.soil.modelling.general_models import SimpleHorizonClassifier
+from bgr.soil.modelling.horizon.horizon_models import SimpleHorizonClassifier
 from bgr.soil.metrics import top_k_accuracy, precision_recall_at_k
 from bgr.soil.data.datasets import SegmentsTabularDataset
 
@@ -336,7 +336,7 @@ class SimpleHorizonClassification(Experiment):
         
         train_loader_tqdm = tqdm(train_loader, desc="Training", leave=False)
         for batch in train_loader_tqdm:
-            segments, padded_true_horizon_indices = batch
+            _, segments, _, _, padded_true_horizon_indices = batch # # full image, tabular_features and geotemp_features not needed
             segments, padded_true_horizon_indices = segments.to(device), padded_true_horizon_indices.to(device)
 
             optimizer.zero_grad() # otherwise, PyTorch accumulates the gradients during backprop
@@ -408,7 +408,7 @@ class SimpleHorizonClassification(Experiment):
         eval_loader_tqdm = tqdm(eval_loader, desc="Evaluating", leave=False)
         with torch.no_grad():
             for batch in eval_loader_tqdm:
-                segments, padded_true_horizon_indices = batch
+                _, segments, _, _, padded_true_horizon_indices = batch # # full image, tabular_features and geotemp_features not needed
                 segments, padded_true_horizon_indices = segments.to(device), padded_true_horizon_indices.to(device)
 
                 # Predict depth markers (as padded tensors)

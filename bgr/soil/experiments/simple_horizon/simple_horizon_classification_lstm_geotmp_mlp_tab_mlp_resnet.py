@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 from bgr.soil.data.horizon_tabular_data import HorizonDataProcessor
 from bgr.soil.experiments import Experiment
-from bgr.soil.modelling.general_models import SimpleHorizonClassifierWithEmbeddingsGeotempsMLPTabMLP
+from bgr.soil.modelling.horizon.horizon_models import SimpleHorizonClassifierWithEmbeddingsGeotempsMLPTabMLP
 from bgr.soil.metrics import top_k_accuracy, precision_recall_at_k
 from bgr.soil.data.datasets import SegmentPatchesTabularDataset
 
@@ -77,9 +77,9 @@ class SimpleHorizonClassificationWithLSTMGeotempsMLPTabMLPResNet(Experiment):
             dataframe=train_df,
             normalize=self.image_normalization,
             label_column=self.target,
-            feature_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
-            segments_tab_num_feature_columns=self.segments_tabular_feature_columns,
-            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns,
+            geotemp_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
+            tab_num_columns=self.segments_tabular_feature_columns,
+            tab_categ_columns=self.segments_tabular_categ_feature_columns,
             segment_patch_number=self.num_segment_patches
         )
         train_loader = DataLoader(train_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
@@ -88,9 +88,9 @@ class SimpleHorizonClassificationWithLSTMGeotempsMLPTabMLPResNet(Experiment):
             dataframe=val_df,
             normalize=self.image_normalization,
             label_column=self.target,
-            feature_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
-            segments_tab_num_feature_columns=self.segments_tabular_feature_columns,
-            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns,
+            geotemp_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
+            tab_num_columns=self.segments_tabular_feature_columns,
+            tab_categ_columns=self.segments_tabular_categ_feature_columns,
             segment_patch_number=self.num_segment_patches
         )
         val_loader = DataLoader(val_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
@@ -228,9 +228,9 @@ class SimpleHorizonClassificationWithLSTMGeotempsMLPTabMLPResNet(Experiment):
             dataframe=test_df,
             normalize=self.image_normalization,
             label_column=self.target,
-            feature_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
-            segments_tab_num_feature_columns=self.segments_tabular_feature_columns,
-            segments_tab_categ_feature_columns=self.segments_tabular_categ_feature_columns,
+            geotemp_columns=self.dataprocessor.geotemp_img_infos[:-1], # without 'file'
+            tab_num_columns=self.segments_tabular_feature_columns,
+            tab_categ_columns=self.segments_tabular_categ_feature_columns,
             segment_patch_number=self.num_segment_patches
         )
         test_loader = DataLoader(test_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
@@ -364,7 +364,7 @@ class SimpleHorizonClassificationWithLSTMGeotempsMLPTabMLPResNet(Experiment):
         
         train_loader_tqdm = tqdm(train_loader, desc="Training", leave=False)
         for batch in train_loader_tqdm:
-            segments, segments_tabular_features, geotemp_features, padded_true_horizon_indices = batch
+            _, segments, segments_tabular_features, geotemp_features, padded_true_horizon_indices = batch # full image not needed
             segments, segments_tabular_features, geotemp_features, padded_true_horizon_indices = segments.to(device), segments_tabular_features.to(device), geotemp_features.to(device), padded_true_horizon_indices.to(device)
 
             optimizer.zero_grad() # otherwise, PyTorch accumulates the gradients during backprop
