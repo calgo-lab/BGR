@@ -1,11 +1,14 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchvision import transforms
 from bgr.soil.modelling.depth.depth_modules import LSTMDepthMarkerPredictor
 from bgr.soil.modelling.geotemp_modules import GeoTemporalEncoder
 from bgr.soil.modelling.horizon.horizon_modules import HorizonEmbedder, HorizonLSTMEmbedder
 from bgr.soil.modelling.image_modules import PatchCNNEncoder, ResNetEncoder, ResNetPatchEncoder, MaskedResNetImageEncoder
 from bgr.soil.modelling.tabulars.tabular_modules import LSTMTabularPredictor, MLPTabularPredictor
+
+from bgr.soil.utils import unpad_image_using_mask
 
 
 class SoilNet_LSTM(nn.Module):
@@ -25,11 +28,12 @@ class SoilNet_LSTM(nn.Module):
         img_patch_size : int = 512,  # may be different from segment patch sizes below
         segments_random_patches : bool = False, # currently used for both img and seg encoders
         num_patches_per_segment : int = 8, # number of patches per segment (only used if segments_random_patches is True)
+        segment_random_patch_size : int = 224, # size of the random patches (only used if segments_random_patches is True)
 
         # Parameters for tabular predictors:
         tabular_output_dim_dict : dict[str, int] = {}, # name_tabular: output_dim
         segment_encoder_output_dim : int = 512,
-        seg_patch_size : int = 512,
+        patch_cnn_segment_size : int = 512,
         tab_rnn_hidden_dim : int = 1024,
         tab_num_lstm_layers : int = 2,
         
@@ -55,7 +59,7 @@ class SoilNet_LSTM(nn.Module):
         self.num_patches_per_segment = num_patches_per_segment
         self.tabular_output_dim_dict = tabular_output_dim_dict
         self.segment_encoder_output_dim = segment_encoder_output_dim
-        self.seg_patch_size = seg_patch_size
+        self.patch_cnn_segment_size = patch_cnn_segment_size
         self.tab_rnn_hidden_dim = tab_rnn_hidden_dim
         self.tab_num_lstm_layers = tab_num_lstm_layers
         self.segments_tabular_output_dim = segments_tabular_output_dim
@@ -67,8 +71,13 @@ class SoilNet_LSTM(nn.Module):
         # Image and segment encoders
         if self.segments_random_patches:
             self.segment_encoder = ResNetPatchEncoder(output_dim=self.segment_encoder_output_dim, resnet_version='18')
+            self.random_crop_transform = transforms.RandomCrop(
+                segment_random_patch_size,
+                pad_if_needed=True,
+                padding_mode='reflect'
+            )
         else:
-            self.segment_encoder = PatchCNNEncoder(patch_size=seg_patch_size, patch_stride=seg_patch_size, output_dim=segment_encoder_output_dim)
+            self.segment_encoder = PatchCNNEncoder(patch_size=patch_cnn_segment_size, patch_stride=patch_cnn_segment_size, output_dim=segment_encoder_output_dim)
             
         # Geotemp encoder
         self.geo_temp_encoder = GeoTemporalEncoder(self.geo_temp_input_dim, self.geo_temp_output_dim)
@@ -119,7 +128,7 @@ class SoilNet_LSTM(nn.Module):
 
         Returns
         -------
-        Tuple[torch.Tensor, Dict[str, torch.Tensor], torch.Tensor]
+        Tuple[torch.Tensor, nn.ModuleDict[str, torch.Tensor], torch.Tensor]
             A tuple containing:
             - depth_markers: The predicted depth markers tensor.
             - tabular_predictions: A dictionary of predicted tabular features tensors.
@@ -142,8 +151,54 @@ class SoilNet_LSTM(nn.Module):
         depth_markers = self.depth_marker_predictor(img_geotemp_vector)
         
         ### TASK 2: Predict tabular features for each segment
-        # TODO: Currently, we are always using the true segments for the subsequent tasks
-        #       Include true_depths=False to use the predicted depths to segment the image at inference time
+        # TODO: Refine this processing. For now, use ground truth if available (teacher forcing),
+        if self.training and true_padded_depths is not None:
+            processed_depth_markers = true_padded_depths # Use ground_truth
+        else:
+            processed_depth_markers = depth_markers # Use predicted depths if not training
+        
+        # --- Get Image Dimensions ---
+        batch_size, C, H_img, W_img = padded_image.shape
+        
+        # Crop image to segments
+        segments = []
+        for i in range(batch_size):
+            image = unpad_image_using_mask(padded_image[i], image_mask[i])  # Unpad the image using the mask
+            depths = processed_depth_markers[i].tolist() # true depths for training, pred. depths for inference
+            
+            # Stop at the first occurrence of stop_token (inclusive)
+            if self.stop_token in depths:
+                depths = depths[:depths.index(self.stop_token) + 1]
+            # Convert normalized depth markers to pixel indices
+            pixel_depths = [int(d * image.shape[1]) for d in [0.0] + depths]  # Add 0.0 for upmost bound
+            
+            image_segments = []
+            for j in range(len(pixel_depths) - 1):
+                upper, lower = pixel_depths[j], pixel_depths[j + 1]
+                cropped = image[:, upper:lower, :]
+                
+                if self.segments_random_patches:
+                    patches = []
+                    for _ in range(self.num_patches_per_segment):
+                        # Randomly crop a patch from the segment
+                        patch = self.random_crop_transform(cropped)
+                        patches.append(patch)
+                    patches = torch.stack(patches)  # Shape: (num_patches, C, H_patch, W_patch)
+                    image_segments.append(patches)
+                else:
+                    # Resize the segment to the patch size
+                    H_patch_cnn, W_patch_cnn = self.patch_cnn_segment_size, 2 * self.patch_cnn_segment_size
+                    cropped_resized = transforms.Resize((H_patch_cnn, W_patch_cnn))(cropped)
+                    image_segments.append(cropped_resized)
+            
+            while len(image_segments) < self.max_seq_len:
+                # Pad with zeros if there are fewer segments than max_seq_len
+                image_segments.append(torch.zeros_like(image_segments[0], device=image.device))
+            
+            # Stack segments for this image
+            image_segments = torch.stack(image_segments)  # Shape: (num_segments, num_patches, C, H, W) or (num_segments, C, H_patch, W_patch)
+            segments.append(image_segments)
+        segments = torch.stack(segments)  # Shape: (N, num_segments, num_patches, C, H, W) or (N, num_segments, C, H_patch, W_patch)
         
         if self.segments_random_patches:
             batch_size, num_segments, num_patches, C, H, W = segments.shape
@@ -174,11 +229,16 @@ class SoilNet_LSTM(nn.Module):
             tabular_predictions[key] = predictor(segment_geotemp_features)
         
         ### TASK 3: Compute horizon embedding from the final concatenated vector
-        # TODO: Currently, we are always using the true tabulars for the final task
-        #       Include true_tabs=False to use the predicted tabulars to compute the horizon embedding at inference time
+        if self.training and true_tabular_features is not None:
+            # Use ground truth tabular features if available
+            processed_tabular_features = true_tabular_features.view(batch_size, num_segments, -1)
+        else:
+            # Use predicted tabular features
+            processed_tabular_features = torch.cat([tabular_predictions[key] for key in self.tabular_predictors.keys()], dim=-1)
+            processed_tabular_features = true_tabular_features.view(batch_size, num_segments, -1)
         
         # Extra MLP for the tabular predictions before entering the horizon predictor
-        true_tabular_features = self.segments_tabular_encoder(true_tabular_features)
+        true_tabular_features = self.segments_tabular_encoder(processed_tabular_features)
         
         # Concatenate segment features with tabular features
         segment_tabular_features = torch.cat([segment_features, true_tabular_features], dim=-1)

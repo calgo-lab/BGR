@@ -1,4 +1,5 @@
 import torch
+import warnings
 
 def check_index_duplicates(loader_tqdm):
     """Check whether there are duplicates in a data loader w.r.t. 'index' column."""
@@ -29,6 +30,51 @@ def pad_tensor(true_depths, max_seq_len, stop_token, device='cpu'):
         padded_targets.append(torch.tensor(depths, device=device))
 
     return torch.stack(padded_targets)
+
+def unpad_image_using_mask(image_padded: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """
+        Removes padding from an image tensor by cropping to the bounding box
+        defined by the True values in a boolean mask.
+
+        Args:
+            image_padded (torch.Tensor): The padded image tensor (C, H_pad, W_pad).
+            mask (torch.Tensor): The boolean mask tensor, assumed to be broadcastable
+                            to (H_pad, W_pad). Typically (1, H_pad, W_pad) or (H_pad, W_pad).
+                            True indicates valid pixels, forming a rectangle.
+
+        Returns:
+            torch.Tensor: The unpadded image tensor (C, H_orig, W_orig).
+                        Returns a tensor with size (C, 0, 0) if the mask is all False.
+        """
+        if mask.dim() == 3 and mask.shape[0] == 1:
+            mask_2d = mask.squeeze(0) # Remove channel dim -> (H_pad, W_pad)
+        elif mask.dim() == 2:
+            mask_2d = mask # Already (H_pad, W_pad)
+        else:
+            raise ValueError(f"Mask must be broadcastable to (H_pad, W_pad), got shape {mask.shape}")
+
+        # Check if there are any True values in the mask
+        if not torch.any(mask_2d):
+            warnings.warn("Attempting to unpad using an all-False mask. Returning empty tensor.", UserWarning)
+            C = image_padded.shape[0]
+            return torch.empty((C, 0, 0), device=image_padded.device, dtype=image_padded.dtype)
+
+        # Find rows and columns that contain at least one True value
+        rows_with_true = torch.any(mask_2d, dim=1)
+        cols_with_true = torch.any(mask_2d, dim=0)
+
+        # Find the first and last indices (bounding box)
+        row_indices = rows_with_true.nonzero(as_tuple=True)[0]
+        col_indices = cols_with_true.nonzero(as_tuple=True)[0]
+
+        min_row, max_row = row_indices[0], row_indices[-1]
+        min_col, max_col = col_indices[0], col_indices[-1]
+
+        # Crop the image using the bounding box indices
+        # Add 1 to max indices because Python slicing is exclusive at the end
+        image_unpadded = image_padded[:, min_row:(max_row + 1), min_col:(max_col + 1)]
+
+        return image_unpadded
 
 
 def split_depth_markers(depth_markers, stop_token=1.0):

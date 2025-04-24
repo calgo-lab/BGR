@@ -588,7 +588,7 @@ class ImageTabularEnd2EndDataset(Dataset):
         depths = [torch.tensor(lower, dtype=torch.float32) for lower in row[self.depth_column]]
         labels = []
         tabular_features = []
-        for i in range(depths):            
+        for i in range(len(depths)):            
             # Extract segment-specific tabular features
             if self.tab_num_columns:
                 num_tabular_features_array = [row[feature][i] for feature in self.tab_num_columns]
@@ -653,6 +653,7 @@ class ImageTabularEnd2EndDataset(Dataset):
         # Always return everything, even if some are empty
         return image, geotemp_features, depths, tabular_features, labels
 
+    @staticmethod
     def collate_soil_profile(batch: List[Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Custom collate function (Static Method).
@@ -668,7 +669,7 @@ class ImageTabularEnd2EndDataset(Dataset):
             A tuple containing batch tensors:
             (batch_images, batch_masks, batch_geotemp, batch_depths, batch_tabulars, batch_labels)
         """
-        images, depths, tabulars, geotemps, labels = zip(*batch) # Unzip the batch
+        images, geotemps, depths, tabulars, labels = zip(*batch) # Unzip the batch
 
         # --- 1. Handle Variable-Sized Images ---
         max_h = max(img.shape[1] for img in images)

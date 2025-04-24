@@ -52,7 +52,8 @@ class HorizonDataProcessor:
             'Moormaechtigkeit', 'Torfmaechtigkeit', 'Neigung', 'Exposition', 'Woelbung', 
             'Reliefformtyp', 'LageImRelief', 'KV_0_30', 'KV_30_100'
         ]
-        self.soil_infos = ['Bodenart', 'Bodenfarbe', 'Steine', 'Karbonat', 'Humusgehaltsklasse', 'Durchwurzelung']
+        # self.soil_infos must have the same order as in the dataset, or the concatenation of tab predictions in end2end model will be wrong
+        self.soil_infos = ['Steine', 'Bodenart', 'Bodenfarbe', 'Karbonat', 'Humusgehaltsklasse', 'Durchwurzelung']
         self.tabulars_output_dim_dict = {key: None for key in self.soil_infos}
         self.geotemp_img_infos = [
             'Probenahme_Monat', 'Probenahme_Jahr', 'xcoord', 'ycoord', 'Bodenklimaraum_Name',

@@ -258,7 +258,7 @@ class End2EndLSTMEmbed(Experiment):
             # Parameters for tabular predictors:
             tabular_output_dim_dict    = self.tabulars_output_dim_dict,
             segment_encoder_output_dim = self.hyperparameters['segment_encoder_output_dim'],
-            seg_patch_size             = self.hyperparameters['seg_patch_size'],
+            patch_cnn_segment_size             = self.hyperparameters['seg_patch_size'],
             tab_rnn_hidden_dim         = self.hyperparameters['tab_rnn_hidden_dim'],
             tab_num_lstm_layers        = self.hyperparameters['tab_num_lstm_layers'],
             
