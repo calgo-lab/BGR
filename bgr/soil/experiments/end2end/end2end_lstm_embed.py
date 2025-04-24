@@ -25,7 +25,7 @@ from bgr.soil.data.horizon_tabular_data import HorizonDataProcessor
 from bgr.soil.experiments._base import Experiment
 from bgr.soil.modelling.tabulars.tabular_models import SimpleTabularModel
 from bgr.soil.metrics import DepthMarkerLoss, TopKHorizonAccuracy, depth_iou, top_k_accuracy_from_indices, precision_recall_at_k
-from bgr.soil.data.datasets import SegmentsTabularDataset
+from bgr.soil.data.datasets import ImageTabularEnd2EndDataset
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -91,7 +91,7 @@ class End2EndLSTMEmbed(Experiment):
         model_output_dir: str # do we need this?
     ) -> tuple[nn.Module, dict]:
         # Load training and validation sets
-        train_dataset = SegmentsTabularDataset(
+        train_dataset = ImageTabularEnd2EndDataset(
             dataframe=train_df,
             normalize=self.image_normalization,
             label_column=self.target,
@@ -99,9 +99,9 @@ class End2EndLSTMEmbed(Experiment):
             tab_num_columns=self.segments_tabular_num_feature_columns,
             tab_categ_columns=self.segments_tabular_categ_feature_columns
         )
-        train_loader = DataLoader(train_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
+        train_loader = train_dataset.to_dataloader(batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
 
-        val_dataset = SegmentsTabularDataset(
+        val_dataset = ImageTabularEnd2EndDataset(
             dataframe=val_df,
             normalize=self.image_normalization,
             label_column=self.target,
@@ -109,7 +109,7 @@ class End2EndLSTMEmbed(Experiment):
             tab_num_columns=self.segments_tabular_num_feature_columns,
             tab_categ_columns=self.segments_tabular_categ_feature_columns
         )
-        val_loader = DataLoader(val_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
+        val_loader = val_dataset.to_dataloader(batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
         model = self.get_model()
         model.to(self.training_args.device)
@@ -201,7 +201,7 @@ class End2EndLSTMEmbed(Experiment):
         test_df: pd.DataFrame,
         model_output_dir: str # do we need this?
     ) -> dict:
-        test_dataset = SegmentsTabularDataset(
+        test_dataset = ImageTabularEnd2EndDataset(
             dataframe=test_df,
             normalize=self.image_normalization,
             label_column=self.target,
@@ -210,7 +210,7 @@ class End2EndLSTMEmbed(Experiment):
             tab_categ_columns=self.segments_tabular_categ_feature_columns
         )
         
-        test_loader = DataLoader(test_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
+        test_loader = test_dataset.to_dataloader(batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
         model.to(self.training_args.device)
         
@@ -253,7 +253,7 @@ class End2EndLSTMEmbed(Experiment):
             stop_token                = self.hyperparameters['stop_token'],
             depth_rnn_hidden_dim      = self.hyperparameters['depth_rnn_hidden_dim'],
             img_patch_size            = self.hyperparameters['img_patch_size'],
-            predefined_random_patches = False, # True = use ResNet, False = use custom CNN
+            segments_random_patches = False, # True = use ResNet, False = use custom CNN
             
             # Parameters for tabular predictors:
             tabular_output_dim_dict    = self.tabulars_output_dim_dict,
@@ -419,28 +419,22 @@ class End2EndLSTMEmbed(Experiment):
         # Iterate over batches
         data_loader_tqdm = tqdm(data_loader, desc=f"{mode.capitalize()}", leave=False, unit="batch")
         for batch in data_loader_tqdm:
-            images, padded_segments, padded_segments_tabulars_labels, geotemp_features, padded_true_horizon_indices = batch
-            images, padded_segments, padded_segments_tabulars_labels, geotemp_features, padded_true_horizon_indices = images.to(device), padded_segments.to(device), padded_segments_tabulars_labels.to(device), geotemp_features.to(device), padded_true_horizon_indices.to(device)
-
+            padded_images, image_mask, geotemp_features, padded_true_depths, padded_segments_tabulars_labels, padded_true_horizon_indices = batch
+            padded_images, image_mask, geotemp_features, padded_true_depths, padded_segments_tabulars_labels, padded_true_horizon_indices = (
+                padded_images.to(device),
+                image_mask.to(device),
+                geotemp_features.to(device),
+                padded_true_depths.to(device),
+                padded_segments_tabulars_labels.to(device),
+                padded_true_horizon_indices.to(device)
+            )
+            
             if mode == 'train':
                 optimizer.zero_grad()
             
             with torch.set_grad_enabled(mode == 'train'):
                 
                 ### Get true targets for all (sub)tasks
-                ## True depths
-                # Get corresponding true depth markers via index column in df (the first value in every row in geotemp)
-                # TODO: can we replace the true depth access via index by a similar approach like in tabs/horizons?
-                true_depths = []
-                batch_indices = geotemp_features.cpu().numpy()[:, 0]
-                for idx in batch_indices:
-                    true_depths.append(data_loader.dataset.dataframe.loc[data_loader.dataset.dataframe['index'] == idx, 'Untergrenze'].values[0])
-
-                # Turn list of depths into a padded tensor and also return mask of valid positions
-                padded_true_depths = pad_tensor(true_depths,
-                                                max_seq_len = model.depth_marker_predictor.max_seq_len,
-                                                stop_token  = model.depth_marker_predictor.stop_token,
-                                                device = device)
                 
                 ## True tabs
                 # Mask for valid indices
@@ -468,9 +462,13 @@ class End2EndLSTMEmbed(Experiment):
                 
                 
                 ### Predictions for all (sub)tasks
-                padded_pred_depths, padded_pred_tabulars, padded_pred_horizon_embeddings = model(images, padded_segments, 
-                                                                                            geotemp_features[:, 1:], # 'index' column not used in model
-                                                                                            padded_segments_tabulars_labels)
+                padded_pred_depths, padded_pred_tabulars, padded_pred_horizon_embeddings = model(
+                    padded_images,
+                    image_mask,
+                    geotemp_features[:, 1:], # 'index' column not used in model
+                    padded_true_depths,
+                    padded_segments_tabulars_labels
+                )
                 
                 ## Filter predictions only at valid positions
                 pred_tabulars = {key: value[mask] for key, value in padded_pred_tabulars.items()}

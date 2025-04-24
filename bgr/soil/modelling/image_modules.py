@@ -1,6 +1,83 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torchvision import models
+from typing import Optional
+
+class MaskedResNetImageEncoder(nn.Module):
+    """
+    Encodes a batch of padded images using a CNN backbone and masked average pooling.
+
+    Args:
+        backbone_name (str): Name of the torchvision model to use as backbone (e.g., 'resnet50').
+        pretrained (bool): Whether to load pretrained weights for the backbone.
+        output_embedding_dim (Optional[int]): If provided, adds a final linear layer
+                                                to project features to this dimension.
+    """
+    def __init__(self, resnet_version='18', pretrained: bool = True, output_embedding_dim: Optional[int] = None):
+        super().__init__()
+
+        # Load the pre-trained backbone
+        if resnet_version == '18':
+            backbone = models.resnet18(pretrained=pretrained)
+            self.feature_dim = backbone.fc.in_features # Get feature dim before final layer
+            # Remove the final classification layer and adaptive pool layer
+            self.backbone = nn.Sequential(*list(backbone.children())[:-2])
+        else:
+            backbone = models.resnet50(pretrained=pretrained)
+            self.feature_dim = backbone.fc.in_features # Get feature dim before final layer
+            # Remove the final classification layer and adaptive pool layer (pooling will be done with the image_mask)
+            self.backbone = nn.Sequential(*list(backbone.children())[:-2])
+        # Optional final projection layer
+        self.projection = nn.Linear(self.feature_dim, output_embedding_dim) if output_embedding_dim else nn.Identity()
+        self.output_dim = output_embedding_dim if output_embedding_dim else self.feature_dim
+
+
+    def forward(self, padded_image: torch.Tensor, image_mask: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass for masked image encoding.
+
+        Args:
+            padded_image (torch.Tensor): Batch of padded images (N, C, H, W).
+            image_mask (torch.Tensor): Batch of masks (N, 1, H, W), True where valid.
+
+        Returns:
+            torch.Tensor: Batch of image embeddings (N, output_dim).
+        """
+        # 1. Get features from the backbone
+        # -> Shape: (batch_size, channels, height, width)
+        features = self.backbone(padded_image)
+        batch_size, channels, height_features, width_features = features.shape
+
+        # 2. Downsample the mask to match feature map dimensions
+        # Ensure mask is float for interpolation
+        mask_float = image_mask.float()
+        # Use nearest neighbor interpolation to keep mask sharp
+        downsampled_mask = F.interpolate(mask_float, size=(height_features, width_features), mode='nearest')
+
+        # 3. Perform masked average pooling
+        # Zero out features in padded regions
+        masked_features = features * downsampled_mask # Broadcasting (N, C_feat, Hf, Wf) * (N, 1, Hf, Wf)
+
+        # Sum features over spatial dimensions
+        feature_sum = masked_features.sum(dim=[2, 3]) # Shape: (N, C_feat)
+
+        # Count number of valid (unmasked) spatial locations per feature map
+        # Summing the float mask (0s and 1s) gives the count
+        valid_pixels_count = downsampled_mask.sum(dim=[2, 3]) # Shape: (N, 1)
+
+        # Avoid division by zero if a mask is all False (shouldn't happen with valid images)
+        valid_pixels_count = valid_pixels_count.clamp(min=1e-6)
+
+        # Calculate masked average
+        # Shape: (N, C_feat) / (N, 1) -> (N, C_feat)
+        masked_avg_features = feature_sum / valid_pixels_count
+
+        # 4. Optional projection
+        # -> Shape: (N, output_dim)
+        output_embedding = self.projection(masked_avg_features)
+
+        return output_embedding
 
 class ResNetEncoder(nn.Module):
     def __init__(self, resnet_version = '18'):
