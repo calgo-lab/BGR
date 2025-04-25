@@ -188,7 +188,7 @@ class SoilNet_LSTM(nn.Module):
                 else:
                     # Resize the segment to the patch size
                     H_patch_cnn, W_patch_cnn = self.patch_cnn_segment_size, 2 * self.patch_cnn_segment_size
-                    cropped_resized = transforms.Resize((H_patch_cnn, W_patch_cnn))(cropped)
+                    cropped_resized = transforms.Resize((H_patch_cnn, W_patch_cnn), antialias=False)(cropped)
                     image_segments.append(cropped_resized)
             
             while len(image_segments) < self.max_seq_len:
