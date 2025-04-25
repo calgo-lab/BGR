@@ -399,10 +399,10 @@ class End2EndLSTMEmbed(Experiment):
 
     def _run_model(self, data_loader, device, model, mode='val', optimizer=None):
         ### Initialize losses and metrics
-        total_loss = 0.0
-        depth_loss = 0.0
-        stones_loss, soiltype_loss, soilcolor_loss, carbonate_loss, humus_loss, rooting_loss = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-        horizon_loss = 0.0
+        run_total_loss = 0.0
+        run_depth_loss = 0.0
+        run_stones_loss, run_soiltype_loss, run_soilcolor_loss, run_carbonate_loss, run_humus_loss, run_rooting_loss = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+        run_horizon_loss = 0.0
         
         iou = 0.0 # Depth IoU computed extra during each batch
         
@@ -512,15 +512,15 @@ class End2EndLSTMEmbed(Experiment):
                     optimizer.step()
                 
                 # Update running losses
-                total_loss     += total_loss.item()
-                depth_loss     += depth_loss.item()
-                stones_loss    += stones_loss.item()
-                soiltype_loss  += soiltype_loss.item()
-                soilcolor_loss += soilcolor_loss.item()
-                carbonate_loss += carbonate_loss.item()
-                humus_loss     += humus_loss.item()
-                rooting_loss   += rooting_loss.item()
-                horizon_loss   += horizon_loss.item()
+                run_total_loss     += total_loss.item()
+                run_depth_loss     += depth_loss.item()
+                run_stones_loss    += stones_loss.item()
+                run_soiltype_loss  += soiltype_loss.item()
+                run_soilcolor_loss += soilcolor_loss.item()
+                run_carbonate_loss += carbonate_loss.item()
+                run_humus_loss     += humus_loss.item()
+                run_rooting_loss   += rooting_loss.item()
+                run_horizon_loss   += horizon_loss.item()
                 
                 # Update depth IoU separately
                 iou += depth_iou(padded_pred_depths, padded_true_depths, model.depth_marker_predictor.stop_token)
@@ -557,15 +557,15 @@ class End2EndLSTMEmbed(Experiment):
                 data_loader_tqdm.set_postfix(loss=total_loss.item())
 
         # Average losses over the batches
-        total_loss     /= len(data_loader)
-        depth_loss     /= len(data_loader)
-        stones_loss    /= len(data_loader)
-        soiltype_loss  /= len(data_loader)
-        soilcolor_loss /= len(data_loader)
-        carbonate_loss /= len(data_loader)
-        humus_loss     /= len(data_loader)
-        rooting_loss   /= len(data_loader)
-        horizon_loss   /= len(data_loader)
+        run_total_loss     /= len(data_loader)
+        run_depth_loss     /= len(data_loader)
+        run_stones_loss    /= len(data_loader)
+        run_soiltype_loss  /= len(data_loader)
+        run_soilcolor_loss /= len(data_loader)
+        run_carbonate_loss /= len(data_loader)
+        run_humus_loss     /= len(data_loader)
+        run_rooting_loss   /= len(data_loader)
+        run_horizon_loss   /= len(data_loader)
 
         # Average IoU and horizon accuracies separately
         iou /= len(data_loader)
@@ -609,15 +609,15 @@ class End2EndLSTMEmbed(Experiment):
 
         # Calculate metrics
         depth_metrics = {
-            f'{mode}_Depth_loss' : depth_loss,
+            f'{mode}_Depth_loss' : run_depth_loss,
             f'{mode}_Depth_IoU': iou.detach().cpu().numpy()
         }
         stones_metrics = {
-            f'{mode}_Steine_loss': stones_loss
+            f'{mode}_Steine_loss': run_stones_loss
         }
         precision_at_k, recal_at_k = precision_recall_at_k(all_soiltype_labels, all_topk_soiltype_predictions, all_labels=possible_soiltype_labels, average=self.tab_class_average)
         soiltype_metrics = {
-            f'{mode}_Bodenart_loss': soiltype_loss,
+            f'{mode}_Bodenart_loss': run_soiltype_loss,
             f'{mode}_Bodenart_accuracy': accuracy_score(all_soiltype_labels, top1_soiltype_predictions),
             f'{mode}_Bodenart_f1': f1_score(all_soiltype_labels, top1_soiltype_predictions, labels=possible_soiltype_labels, average=self.tab_class_average, zero_division=0),
             f'{mode}_Bodenart_precision': precision_score(all_soiltype_labels, top1_soiltype_predictions, labels=possible_soiltype_labels, average=self.tab_class_average, zero_division=0),
@@ -628,7 +628,7 @@ class End2EndLSTMEmbed(Experiment):
         }
         precision_at_k, recal_at_k = precision_recall_at_k(all_soilcolor_labels, all_topk_soilcolor_predictions, all_labels=possible_soilcolor_labels, average=self.tab_class_average)
         soilcolor_metrics = {
-            f'{mode}_Bodenfarbe_loss': soilcolor_loss,
+            f'{mode}_Bodenfarbe_loss': run_soilcolor_loss,
             f'{mode}_Bodenfarbe_accuracy': accuracy_score(all_soilcolor_labels, top1_soilcolor_predictions),
             f'{mode}_Bodenfarbe_f1': f1_score(all_soilcolor_labels, top1_soilcolor_predictions, labels=possible_soilcolor_labels, average=self.tab_class_average, zero_division=0),
             f'{mode}_Bodenfarbe_precision': precision_score(all_soilcolor_labels, top1_soilcolor_predictions, labels=possible_soilcolor_labels, average=self.tab_class_average, zero_division=0),
@@ -639,7 +639,7 @@ class End2EndLSTMEmbed(Experiment):
         }
         precision_at_k, recal_at_k = precision_recall_at_k(all_carbonate_labels, all_topk_carbonate_predictions, all_labels=possible_carbonate_labels, average=self.tab_class_average)
         carbonate_metrics = {
-            f'{mode}_Karbonat_loss': carbonate_loss,
+            f'{mode}_Karbonat_loss': run_carbonate_loss,
             f'{mode}_Karbonat_accuracy': accuracy_score(all_carbonate_labels, top1_carbonate_predictions),
             f'{mode}_Karbonat_f1': f1_score(all_carbonate_labels, top1_carbonate_predictions, labels=possible_carbonate_labels, average=self.tab_class_average, zero_division=0),
             f'{mode}_Karbonat_precision': precision_score(all_carbonate_labels, top1_carbonate_predictions, labels=possible_carbonate_labels, average=self.tab_class_average, zero_division=0),
@@ -650,7 +650,7 @@ class End2EndLSTMEmbed(Experiment):
         }
         precision_at_k, recal_at_k = precision_recall_at_k(all_humus_labels, all_topk_humus_predictions, all_labels=possible_humus_labels, average=self.tab_class_average)
         humus_metrics = {
-            f'{mode}_Humusgehaltsklasse_loss': humus_loss,
+            f'{mode}_Humusgehaltsklasse_loss': run_humus_loss,
             f'{mode}_Humusgehaltsklasse_accuracy': accuracy_score(all_humus_labels, top1_humus_predictions),
             f'{mode}_Humusgehaltsklasse_f1': f1_score(all_humus_labels, top1_humus_predictions, labels=possible_humus_labels, average=self.tab_class_average, zero_division=0),
             f'{mode}_Humusgehaltsklasse_precision': precision_score(all_humus_labels, top1_humus_predictions, labels=possible_humus_labels, average=self.tab_class_average, zero_division=0),
@@ -661,7 +661,7 @@ class End2EndLSTMEmbed(Experiment):
         }
         precision_at_k, recal_at_k = precision_recall_at_k(all_rooting_labels, all_topk_rooting_predictions, all_labels=possible_rooting_labels, average=self.tab_class_average)
         rooting_metrics = {
-            f'{mode}_Durchwurzelung_loss': rooting_loss,
+            f'{mode}_Durchwurzelung_loss': run_rooting_loss,
             f'{mode}_Durchwurzelung_accuracy': accuracy_score(all_rooting_labels, top1_rooting_predictions),
             f'{mode}_Durchwurzelung_f1': f1_score(all_rooting_labels, top1_rooting_predictions, labels=possible_rooting_labels, average=self.tab_class_average, zero_division=0),
             f'{mode}_Durchwurzelung_precision': precision_score(all_rooting_labels, top1_rooting_predictions, labels=possible_rooting_labels, average=self.tab_class_average, zero_division=0),
@@ -672,7 +672,7 @@ class End2EndLSTMEmbed(Experiment):
         }
         precision_at_k, recall_at_k = precision_recall_at_k(all_horizon_labels, topk_horizon_predictions.numpy(), all_labels=self.hor_possible_labels, average=self.hor_class_average)
         horizon_metrics = {
-            f'{mode}_Horizon_cosine_loss': horizon_loss,
+            f'{mode}_Horizon_cosine_loss': run_horizon_loss,
             f'{mode}_Horizon_accuracy': eval_horizon_acc,
             f'{mode}_Horizon_topk_accuracy': eval_horizon_topk_acc,
             f'{mode}_Horizon_precision': precision_score(all_horizon_labels, top1_horizon_predictions.numpy(), labels=self.hor_possible_labels, average=self.hor_class_average, zero_division=0),
@@ -686,7 +686,7 @@ class End2EndLSTMEmbed(Experiment):
         self.hor_labels[mode]      = all_horizon_labels
         self.hor_predictions[mode] = top1_horizon_predictions.numpy()
 
-        return total_loss, \
+        return run_total_loss, \
             depth_metrics, \
             stones_metrics, \
             soiltype_metrics, \
