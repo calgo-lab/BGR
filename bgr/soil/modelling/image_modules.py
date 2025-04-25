@@ -19,12 +19,12 @@ class MaskedResNetImageEncoder(nn.Module):
 
         # Load the pre-trained backbone
         if resnet_version == '18':
-            backbone = models.resnet18(pretrained=pretrained)
+            backbone = models.resnet18(weights=models.resnet.ResNet18_Weights.DEFAULT if pretrained else None)
             self.feature_dim = backbone.fc.in_features # Get feature dim before final layer
             # Remove the final classification layer and adaptive pool layer
             self.backbone = nn.Sequential(*list(backbone.children())[:-2])
         else:
-            backbone = models.resnet50(pretrained=pretrained)
+            backbone = models.resnet50(weights=models.resnet.ResNet50_Weights.DEFAULT if pretrained else None)
             self.feature_dim = backbone.fc.in_features # Get feature dim before final layer
             # Remove the final classification layer and adaptive pool layer (pooling will be done with the image_mask)
             self.backbone = nn.Sequential(*list(backbone.children())[:-2])
@@ -83,9 +83,9 @@ class ResNetEncoder(nn.Module):
     def __init__(self, resnet_version = '18'):
         super(ResNetEncoder, self).__init__()
         if resnet_version == '18':
-            self.cnn = models.resnet18(pretrained=True)
+            self.cnn = models.resnet18(weights=models.resnet.ResNet18_Weights.DEFAULT)
         else:
-            self.cnn = models.resnet50(pretrained=True)
+            self.cnn = models.resnet50(weights=models.resnet.ResNet50_Weights.DEFAULT)
         self.num_img_features = self.cnn.fc.in_features # store before replacing classification head with identity (512 for resnet18)
         self.cnn.fc = nn.Identity()  # Removing the final classification layer
 
@@ -96,9 +96,9 @@ class ResNetPatchEncoder(nn.Module):
     def __init__(self, output_dim, resnet_version='18'):
         super(ResNetPatchEncoder, self).__init__()
         if resnet_version == '18':
-            self.cnn = models.resnet18(pretrained=True)
+            self.cnn = models.resnet18(weights=models.resnet.ResNet18_Weights.DEFAULT)
         elif resnet_version == '50':
-            self.cnn = models.resnet50(pretrained=True)
+            self.cnn = models.resnet50(weights=models.resnet.ResNet50_Weights.DEFAULT)
         else:
             raise ValueError("Unsupported ResNet version. Choose either '18' or '50'.")
         
