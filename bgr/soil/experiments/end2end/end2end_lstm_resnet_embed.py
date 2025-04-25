@@ -31,7 +31,7 @@ from bgr.soil.data.datasets import ImageTabularEnd2EndDataset
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class End2EndLSTMEmbed(Experiment):
+class End2EndLSTMResNetEmbed(Experiment):
     def __init__(self, training_args: 'TrainingArgs', target: str, dataprocessor: HorizonDataProcessor):
         self.training_args = training_args
         self.dataprocessor = dataprocessor
@@ -73,7 +73,7 @@ class End2EndLSTMEmbed(Experiment):
         self.hor_class_average = 'macro'
         
         # Retrieve the experiment hyperparameters
-        self.hyperparameters = End2EndLSTMEmbed.get_experiment_hyperparameters()
+        self.hyperparameters = End2EndLSTMResNetEmbed.get_experiment_hyperparameters()
         self.hyperparameters.update(training_args.hyperparameters)
         
         # Initialize dictionary to store lists of stones predictions and true values (for the bisector)
@@ -286,12 +286,13 @@ class End2EndLSTMEmbed(Experiment):
             stop_token                = self.hyperparameters['stop_token'],
             depth_rnn_hidden_dim      = self.hyperparameters['depth_rnn_hidden_dim'],
             img_patch_size            = self.hyperparameters['img_patch_size'],
-            segments_random_patches = False, # True = use ResNet, False = use custom CNN
+            segments_random_patches = True, # True = use ResNet, False = use custom CNN
+            num_patches_per_segment=self.hyperparameters['num_patches_per_segment'],
+            segment_random_patch_size=self.hyperparameters['segment_random_patch_size'],
             
             # Parameters for tabular predictors:
             tabular_output_dim_dict    = self.tabulars_output_dim_dict,
             segment_encoder_output_dim = self.hyperparameters['segment_encoder_output_dim'],
-            patch_cnn_segment_size             = self.hyperparameters['seg_patch_size'],
             tab_rnn_hidden_dim         = self.hyperparameters['tab_rnn_hidden_dim'],
             tab_num_lstm_layers        = self.hyperparameters['tab_num_lstm_layers'],
             
@@ -774,10 +775,11 @@ class End2EndLSTMEmbed(Experiment):
             'stop_token': 1.0,
             'depth_rnn_hidden_dim': 256,
             'img_patch_size': 512,
+            'num_patches_per_segment': 8,
+            'segment_random_patch_size': 224,
             
             # Parameters for tabular predictors:
             'segment_encoder_output_dim': 512,
-            'seg_patch_size': 512,
             'tab_rnn_hidden_dim': 1024,
             'tab_num_lstm_layers': 2,
             
