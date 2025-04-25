@@ -18,6 +18,8 @@ from .simple_tabulars.simple_tabulars_geotmp_resnet import SimpleTabularsGeotemp
 from .simple_tabulars.simple_tabulars_geotmp import SimpleTabularsGeotemps
 from .end2end.end2end_lstm_embed import End2EndLSTMEmbed
 from .end2end.end2end_lstm_resnet_embed import End2EndLSTMResNetEmbed
+from .end2end.end2end_lstm import End2EndLSTM
+from .end2end.end2end_lstm_resnet import End2EndLSTMResNet
 
 def get_experiment(experiment_type, training_args, target, dataprocessor) -> Experiment:    
     if experiment_type == "simple_depths_geotmp":
@@ -58,6 +60,10 @@ def get_experiment(experiment_type, training_args, target, dataprocessor) -> Exp
         return End2EndLSTMEmbed(training_args, target, dataprocessor)
     elif experiment_type == "end2end_lstm_resnet_embed":
         return End2EndLSTMResNetEmbed(training_args, target, dataprocessor)
+    elif experiment_type == "end2end_lstm":
+        return End2EndLSTM(training_args, target, dataprocessor)
+    elif experiment_type == "end2end_lstm_resnet":
+        return End2EndLSTMResNet(training_args, target, dataprocessor)
     else:
         raise ValueError(f"Unknown experiment type: {experiment_type}")
     
@@ -100,5 +106,9 @@ def get_experiment_hyperparameters(experiment_type) -> dict:
         return End2EndLSTMEmbed.get_experiment_hyperparameters()
     elif experiment_type == "end2end_lstm_resnet_embed":
         return End2EndLSTMResNetEmbed.get_experiment_hyperparameters()
+    elif experiment_type == "end2end_lstm":
+        return End2EndLSTM.get_experiment_hyperparameters()
+    elif experiment_type == "end2end_lstm_resnet":
+        return End2EndLSTMResNet.get_experiment_hyperparameters()
     else:
         raise ValueError(f"Unknown experiment type: {experiment_type}")
