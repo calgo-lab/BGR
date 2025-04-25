@@ -1,14 +1,13 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision import transforms
 from bgr.soil.modelling.depth.depth_modules import LSTMDepthMarkerPredictor
 from bgr.soil.modelling.geotemp_modules import GeoTemporalEncoder
 from bgr.soil.modelling.horizon.horizon_modules import HorizonEmbedder, HorizonLSTMEmbedder
 from bgr.soil.modelling.image_modules import PatchCNNEncoder, ResNetEncoder, ResNetPatchEncoder, MaskedResNetImageEncoder
 from bgr.soil.modelling.tabulars.tabular_modules import LSTMTabularPredictor, MLPTabularPredictor
 
-from bgr.soil.utils import unpad_image_using_mask
+from bgr.soil.utils import unpad_image_using_mask, tensor_random_crop_reflect
 
 
 class SoilNet_LSTM(nn.Module):
@@ -57,6 +56,7 @@ class SoilNet_LSTM(nn.Module):
         self.img_patch_size = img_patch_size
         self.segments_random_patches = segments_random_patches
         self.num_patches_per_segment = num_patches_per_segment
+        self.segment_random_patch_size = segment_random_patch_size
         self.tabular_output_dim_dict = tabular_output_dim_dict
         self.segment_encoder_output_dim = segment_encoder_output_dim
         self.patch_cnn_segment_size = patch_cnn_segment_size
@@ -71,11 +71,6 @@ class SoilNet_LSTM(nn.Module):
         # Image and segment encoders
         if self.segments_random_patches:
             self.segment_encoder = ResNetPatchEncoder(output_dim=self.segment_encoder_output_dim, resnet_version='18')
-            self.random_crop_transform = transforms.RandomCrop(
-                segment_random_patch_size,
-                pad_if_needed=True,
-                padding_mode='reflect'
-            )
         else:
             self.segment_encoder = PatchCNNEncoder(patch_size=patch_cnn_segment_size, patch_stride=patch_cnn_segment_size, output_dim=segment_encoder_output_dim)
             
@@ -157,48 +152,8 @@ class SoilNet_LSTM(nn.Module):
         else:
             processed_depth_markers = depth_markers # Use predicted depths if not training
         
-        # --- Get Image Dimensions ---
-        batch_size, C, H_img, W_img = padded_image.shape
-        
         # Crop image to segments
-        segments = []
-        for i in range(batch_size):
-            image = unpad_image_using_mask(padded_image[i], image_mask[i])  # Unpad the image using the mask
-            depths = processed_depth_markers[i].tolist() # true depths for training, pred. depths for inference
-            
-            # Stop at the first occurrence of stop_token (inclusive)
-            if self.stop_token in depths:
-                depths = depths[:depths.index(self.stop_token) + 1]
-            # Convert normalized depth markers to pixel indices
-            pixel_depths = [int(d * image.shape[1]) for d in [0.0] + depths]  # Add 0.0 for upmost bound
-            
-            image_segments = []
-            for j in range(len(pixel_depths) - 1):
-                upper, lower = pixel_depths[j], pixel_depths[j + 1]
-                cropped = image[:, upper:lower, :]
-                
-                if self.segments_random_patches:
-                    patches = []
-                    for _ in range(self.num_patches_per_segment):
-                        # Randomly crop a patch from the segment
-                        patch = self.random_crop_transform(cropped)
-                        patches.append(patch)
-                    patches = torch.stack(patches)  # Shape: (num_patches, C, H_patch, W_patch)
-                    image_segments.append(patches)
-                else:
-                    # Resize the segment to the patch size
-                    H_patch_cnn, W_patch_cnn = self.patch_cnn_segment_size, 2 * self.patch_cnn_segment_size
-                    cropped_resized = transforms.Resize((H_patch_cnn, W_patch_cnn), antialias=False)(cropped)
-                    image_segments.append(cropped_resized)
-            
-            while len(image_segments) < self.max_seq_len:
-                # Pad with zeros if there are fewer segments than max_seq_len
-                image_segments.append(torch.zeros_like(image_segments[0], device=image.device))
-            
-            # Stack segments for this image
-            image_segments = torch.stack(image_segments)  # Shape: (num_segments, num_patches, C, H, W) or (num_segments, C, H_patch, W_patch)
-            segments.append(image_segments)
-        segments = torch.stack(segments)  # Shape: (N, num_segments, num_patches, C, H, W) or (N, num_segments, C, H_patch, W_patch)
+        segments = self.extract_segments(padded_image, image_mask, processed_depth_markers)
         
         if self.segments_random_patches:
             batch_size, num_segments, num_patches, C, H, W = segments.shape
@@ -255,6 +210,72 @@ class SoilNet_LSTM(nn.Module):
         horizon_embeddings = self.horizon_embedder(segment_tabular_geotemp_features, num_segments)
         
         return depth_markers, tabular_predictions, horizon_embeddings
+    
+    def extract_segments(self, padded_images, image_masks, processed_depth_markers):
+        """
+        Extracts segments from a batch of padded images using depth markers.
+        Returns a tensor of shape:
+         - (N, max_seq_len, num_patches, C, H, W)  if segments_random_patches=True
+         - (N, max_seq_len, C, H_patch, W_patch)   otherwise
+        """
+        N, C, H, W = padded_images.shape
+        device = padded_images.device
+
+        # Precreate deterministic resize if needed
+        if not self.segments_random_patches:
+            H_patch = self.patch_cnn_segment_size
+            W_patch = 2 * self.patch_cnn_segment_size
+
+        segments_batch = []
+        for img, mask, depth_row in zip(padded_images, image_masks, processed_depth_markers):
+            # 1) Unpad
+            image = unpad_image_using_mask(img, mask)  # (C, H_img, W_img)
+
+            # 2) Truncate depths at stop_token
+            depths = depth_row.tolist()
+            if self.stop_token in depths:
+                idx = depths.index(self.stop_token) + 1
+                depths = depths[:idx]
+
+            # Convert to pixel bounds, prepend 0
+            pixel_bounds = [0] + [int(d * image.shape[1]) for d in depths]
+            num_segs = len(pixel_bounds) - 1
+
+            # 3) Allocate container
+            if self.segments_random_patches:
+                seg_tensor = torch.zeros(
+                    (self.max_seq_len, self.num_patches_per_segment, C, self.segment_random_patch_size, self.segment_random_patch_size),
+                    device=device
+                )
+            else:
+                seg_tensor = torch.zeros(
+                    (self.max_seq_len, C, H_patch, W_patch),
+                    device=device
+                )
+
+            # 4) Crop & process each segment
+            for j in range(num_segs):
+                uppper, lower = pixel_bounds[j], pixel_bounds[j + 1]
+                cropped = image[:, uppper:lower, :]  # (C, seg_h, W)
+
+                if self.segments_random_patches:
+                    patches = [
+                        tensor_random_crop_reflect(cropped, self.segment_random_patch_size)
+                        for _ in range(self.num_patches_per_segment)
+                    ]
+                    seg_tensor[j] = torch.stack(patches)
+                else:
+                    resized = F.interpolate(
+                        cropped.unsqueeze(0),
+                        size=(H_patch, W_patch),
+                        mode='bilinear',
+                        align_corners=False
+                    )
+                    seg_tensor[j] = resized
+
+            segments_batch.append(seg_tensor)
+
+        return torch.stack(segments_batch, dim=0)  # (N, ...)
 
 
 # DEPRECATED:
