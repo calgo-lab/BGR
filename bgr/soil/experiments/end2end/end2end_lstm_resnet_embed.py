@@ -298,7 +298,10 @@ class End2EndLSTMResNetEmbed(Experiment):
             
             # Parameters for horizon predictor:
             segments_tabular_output_dim = self.hyperparameters['segments_tabular_output_dim'],
-            embedding_dim               = np.shape(self.dataprocessor.embeddings_dict['embedding'])[1]
+            embedding_dim               = np.shape(self.dataprocessor.embeddings_dict['embedding'])[1],
+            
+            # Parameters for the model:
+            teacher_forcing_stop_epoch  = self.hyperparameters['teacher_forcing_stop_epoch']
         )
     
     def plot_losses(self, model_output_dir, wandb_image_logging):
@@ -784,5 +787,8 @@ class End2EndLSTMResNetEmbed(Experiment):
             'tab_num_lstm_layers': 2,
             
             # Parameters for horizon predictor:
-            'segments_tabular_output_dim': 256
+            'segments_tabular_output_dim': 256,
+            
+            # Parameters for model:
+            'teacher_forcing_stop_epoch': 5
         }
