@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from bgr.soil.modelling.depth.depth_modules import LSTMDepthMarkerPredictor
+from bgr.soil.modelling.depth.depth_modules import LSTMDepthMarkerPredictorWithGuardrails
 from bgr.soil.modelling.geotemp_modules import GeoTemporalEncoder
 from bgr.soil.modelling.horizon.horizon_modules import HorizonEmbedder, HorizonLSTMEmbedder
 from bgr.soil.modelling.image_modules import PatchCNNEncoder, ResNetEncoder, ResNetPatchEncoder, MaskedResNetImageEncoder
@@ -82,7 +82,7 @@ class SoilNet_LSTM(nn.Module):
         self.geo_temp_encoder = GeoTemporalEncoder(self.geo_temp_input_dim, self.geo_temp_output_dim)
         
         # Depth marker predictor
-        self.depth_marker_predictor = LSTMDepthMarkerPredictor(self.image_encoder_output_dim + self.geo_temp_output_dim, self.depth_rnn_hidden_dim, self.max_seq_len, self.stop_token)
+        self.depth_marker_predictor = LSTMDepthMarkerPredictorWithGuardrails(self.image_encoder_output_dim + self.geo_temp_output_dim, self.depth_rnn_hidden_dim, self.max_seq_len, self.stop_token)
         
         # Tabular predictors (one for each tabular)
         self.tabular_predictors = nn.ModuleDict()
@@ -332,7 +332,7 @@ class HorizonClassifier(nn.Module):
         #self.depth_marker_predictor = TransformerDepthMarkerPredictor(self.image_encoder.num_img_features + geo_temp_output_dim,
         #                                                              transformer_dim, num_transformer_heads, num_transformer_layers,
         #                                                              max_seq_len, stop_token)
-        self.depth_marker_predictor = LSTMDepthMarkerPredictor(self.image_encoder.num_img_features + geo_temp_output_dim, rnn_hidden_dim, max_seq_len, stop_token)
+        self.depth_marker_predictor = LSTMDepthMarkerPredictorWithGuardrails(self.image_encoder.num_img_features + geo_temp_output_dim, rnn_hidden_dim, max_seq_len, stop_token)
 
         self.segment_encoder = ResNetEncoder(resnet_version='18') # after predicting the depths, the original image is cropped and fed into another vision model
 

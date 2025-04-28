@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 class LSTMDepthMarkerPredictor(nn.Module):
     def __init__(self, input_dim, hidden_dim=256, max_seq_len=10, stop_token=1.0):
@@ -44,7 +45,60 @@ class LSTMDepthMarkerPredictor(nn.Module):
             depth_markers)
 
         return depth_markers
+    
+class LSTMDepthMarkerPredictorWithGuardrails(nn.Module):
+    def __init__(self, input_dim, hidden_dim=256, max_seq_len=10, stop_token=1.0):
+        super(LSTMDepthMarkerPredictorWithGuardrails, self).__init__()
+        self.hidden_dim = hidden_dim
+        self.max_seq_len = max_seq_len
+        self.stop_token = stop_token
+        self.num_lstm_layers = 2
 
+        # First fully connected layer (projecting the concatenated vector of image and geotemp features)
+        self.fc = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(0.2)
+        )
+
+        # Decoder - will store the previous predictions in the hidden state
+        self.rnn = nn.LSTM(input_size=hidden_dim, hidden_size=hidden_dim, batch_first=True,
+                           num_layers=self.num_lstm_layers, dropout=0.2, bidirectional=True)
+
+        # Output Layer - predicts one depth at a time
+        self.predictor = nn.Linear(2*hidden_dim, 1)
+
+    def forward(self, x):
+        hidden_state = torch.zeros(2*self.num_lstm_layers, x.size(0), self.hidden_dim).to(x.device)
+        cell_state   = torch.zeros(2*self.num_lstm_layers, x.size(0), self.hidden_dim).to(x.device)
+        depth_markers = []
+
+        x = self.fc(x).unsqueeze(1) # (batch_size, 1, hidden_dim)
+        for i in range(self.max_seq_len):
+            output, (hidden_state, cell_state) = self.rnn(x, (hidden_state, cell_state))
+            delta_pred = self.predictor(output).squeeze()
+            
+            # Guardrail: Depth marker should be positive and non-decreasing
+            delta_pred = F.relu(delta_pred)
+            if i > 0:
+                depth_markers.append(depth_markers[-1] + delta_pred)
+            else:
+                # First depth marker is just the delta prediction          
+                depth_markers.append(delta_pred)
+
+        depth_markers = torch.stack(depth_markers, dim=1) # (batch_size, max_seq_len)
+
+        # Guardrail: Depth markers should be between 0 and stop_token
+        depth_markers = torch.clamp(depth_markers, min=0, max=self.stop_token)
+        
+        # Round values very near to stop_token and above it to stop_token
+        depth_markers = torch.where(
+            depth_markers > self.stop_token - 0.01,
+            torch.full_like(depth_markers, self.stop_token),
+            depth_markers)
+
+        return depth_markers
 
 class CrossAttentionTransformerDepthMarkerPredictor(nn.Module):
     def __init__(self, input_dim, hidden_dim=256, max_seq_len=10, stop_token=1.0, num_heads=8, num_layers=2):
