@@ -180,7 +180,7 @@ class End2EndLSTM(Experiment):
                 f"- Depth IoU: {train_depth_metrics['train_Depth_IoU']:.4f}\n"
                 f"- Tabulars:\n"
                 f"{self._fancy_print(epoch_metrics, key_prefix='train_')}\n"
-                f"- Horizon (Cross-Entropy) Loss: {train_horizon_metrics['train_Horizon_cosine_loss']:.4f}\n"
+                f"- Horizon (Cross-Entropy) Loss: {train_horizon_metrics['train_Horizon_cross_entropy_loss']:.4f}\n"
                 f"- Horizon Accuracy: {train_horizon_metrics['train_Horizon_accuracy']:.4f}\n"
                 f"- Horizon Top-{self.hor_topk} Accuracy: {train_horizon_metrics['train_Horizon_topk_accuracy']:.4f}\n"
                 f"- Horizon Precision: {train_horizon_metrics['train_Horizon_precision']:.4f}\n"
@@ -194,7 +194,7 @@ class End2EndLSTM(Experiment):
                 f"- Depth IoU: {val_depth_metrics['val_Depth_IoU']:.4f}\n"
                 f"- Tabulars:\n"
                 f"{self._fancy_print(epoch_metrics, key_prefix='val_')}\n"
-                f"- Horizon (Cross-Entropy) Loss: {val_horizon_metrics['val_Horizon_cosine_loss']:.4f}\n"
+                f"- Horizon (Cross-Entropy) Loss: {val_horizon_metrics['val_Horizon_cross_entropy_loss']:.4f}\n"
                 f"- Horizon Accuracy: {val_horizon_metrics['val_Horizon_accuracy']:.4f}\n"
                 f"- Horizon Top-{self.hor_topk} Accuracy: {val_horizon_metrics['val_Horizon_topk_accuracy']:.4f}\n"
                 f"- Horizon Precision: {val_horizon_metrics['val_Horizon_precision']:.4f}\n"
@@ -262,7 +262,7 @@ class End2EndLSTM(Experiment):
             f"- Depth IoU: {test_depth_metrics['test_Depth_IoU']:.4f}\n"
             f"- Tabulars:\n"
             f"{self._fancy_print(test_metrics, key_prefix='test_')}\n"
-            f"- Horizon (Cross-Entropy) Loss: {test_horizon_metrics['test_Horizon_cosine_loss']:.4f}\n"
+            f"- Horizon (Cross-Entropy) Loss: {test_horizon_metrics['test_Horizon_cross_entropy_loss']:.4f}\n"
             f"- Horizon Accuracy: {test_horizon_metrics['test_Horizon_accuracy']:.4f}\n"
             f"- Horizon Top-{self.hor_topk} Accuracy: {test_horizon_metrics['test_Horizon_topk_accuracy']:.4f}\n"
             f"- Horizon Precision: {test_horizon_metrics['test_Horizon_precision']:.4f}\n"
@@ -310,7 +310,7 @@ class End2EndLSTM(Experiment):
             'Carbonate':  [epoch_metrics.get('train_Karbonat_loss', float('nan')) for epoch_metrics in self.histories],
             'Humus':      [epoch_metrics.get('train_Humusgehaltsklasse_loss', float('nan')) for epoch_metrics in self.histories],
             'Rooting':    [epoch_metrics.get('train_Durchwurzelung_loss', float('nan')) for epoch_metrics in self.histories],
-            'Horizon':    [epoch_metrics.get('train_Horizon_cosine_loss', float('nan')) for epoch_metrics in self.histories],
+            'Horizon':    [epoch_metrics.get('train_Horizon_cross_entropy_loss', float('nan')) for epoch_metrics in self.histories],
             'Total':      [epoch_metrics.get('train_loss', float('nan')) for epoch_metrics in self.histories]
         }
         all_val_losses = {
@@ -321,7 +321,7 @@ class End2EndLSTM(Experiment):
             'Carbonate':  [epoch_metrics.get('val_Karbonat_loss', float('nan')) for epoch_metrics in self.histories],
             'Humus':      [epoch_metrics.get('val_Humusgehaltsklasse_loss', float('nan')) for epoch_metrics in self.histories],
             'Rooting':    [epoch_metrics.get('val_Durchwurzelung_loss', float('nan')) for epoch_metrics in self.histories],
-            'Horizon':    [epoch_metrics.get('val_Horizon_cosine_loss', float('nan')) for epoch_metrics in self.histories],
+            'Horizon':    [epoch_metrics.get('val_Horizon_cross_entropy_loss', float('nan')) for epoch_metrics in self.histories],
             'Total':      [epoch_metrics.get('val_loss', float('nan')) for epoch_metrics in self.histories]
         }
         all_train_metrics = {
@@ -699,7 +699,7 @@ class End2EndLSTM(Experiment):
         }
         precision_at_k, recall_at_k = precision_recall_at_k(all_horizon_labels, topk_horizon_predictions.numpy(), all_labels=self.hor_possible_labels, average=self.hor_class_average)
         horizon_metrics = {
-            f'{mode}_Horizon_cosine_loss': run_horizon_loss,
+            f'{mode}_Horizon_cross_entropy_loss': run_horizon_loss,
             f'{mode}_Horizon_accuracy': eval_horizon_acc,
             f'{mode}_Horizon_topk_accuracy': eval_horizon_topk_acc,
             f'{mode}_Horizon_precision': precision_score(all_horizon_labels, top1_horizon_predictions.numpy(), labels=self.hor_possible_labels, average=self.hor_class_average, zero_division=0),
