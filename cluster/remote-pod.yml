@@ -35,7 +35,7 @@ spec:
           - name: dshm
             mountPath: /dev/shm
       nodeSelector:
-      #   kubernetes.io/hostname: cl-worker24
+        kubernetes.io/hostname: cl-worker24
         gpu: a100
       volumes:
         - name: bgr-project-pvc
@@ -47,4 +47,3 @@ spec:
         - name: dshm
           emptyDir:
             medium: Memory
-            sizeLimit: 20Gi

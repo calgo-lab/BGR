@@ -24,14 +24,14 @@ from bgr.soil.modelling.soilnet import SoilNet_LSTM
 from bgr.soil.data.horizon_tabular_data import HorizonDataProcessor
 from bgr.soil.experiments._base import Experiment
 from bgr.soil.modelling.tabulars.tabular_models import SimpleTabularModel
-from bgr.soil.metrics import DepthMarkerLoss, TopKHorizonAccuracy, depth_iou, top_k_accuracy_from_indices, precision_recall_at_k
+from bgr.soil.metrics import DepthMarkerLoss, TopKHorizonAccuracy, depth_iou, top_k_accuracy, top_k_accuracy_from_indices, precision_recall_at_k
 from bgr.soil.data.datasets import ImageTabularEnd2EndDataset
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class End2EndLSTMEmbed(Experiment):
+class End2EndLSTM(Experiment):
     def __init__(self, training_args: 'TrainingArgs', target: str, dataprocessor: HorizonDataProcessor):
         self.training_args = training_args
         self.dataprocessor = dataprocessor
@@ -67,13 +67,12 @@ class End2EndLSTMEmbed(Experiment):
         self.tab_class_average = 'macro'
         # From horizons
         self.label_embeddings_tensor = torch.tensor(self.dataprocessor.embeddings_dict['embedding'], device=self.training_args.device).float()
-        self.cosine_loss = nn.CosineEmbeddingLoss()
         self.hor_topk = 5
         self.hor_topk_acc = lambda k : TopKHorizonAccuracy(self.label_embeddings_tensor, k=k)
         self.hor_class_average = 'macro'
         
         # Retrieve the experiment hyperparameters
-        self.hyperparameters = End2EndLSTMEmbed.get_experiment_hyperparameters()
+        self.hyperparameters = End2EndLSTM.get_experiment_hyperparameters()
         self.hyperparameters.update(training_args.hyperparameters)
         
         # Initialize dictionary to store lists of stones predictions and true values (for the bisector)
@@ -181,7 +180,7 @@ class End2EndLSTMEmbed(Experiment):
                 f"- Depth IoU: {train_depth_metrics['train_Depth_IoU']:.4f}\n"
                 f"- Tabulars:\n"
                 f"{self._fancy_print(epoch_metrics, key_prefix='train_')}\n"
-                f"- Horizon (Cosine) Loss: {train_horizon_metrics['train_Horizon_cosine_loss']:.4f}\n"
+                f"- Horizon (Cross-Entropy) Loss: {train_horizon_metrics['train_Horizon_cross_entropy_loss']:.4f}\n"
                 f"- Horizon Accuracy: {train_horizon_metrics['train_Horizon_accuracy']:.4f}\n"
                 f"- Horizon Top-{self.hor_topk} Accuracy: {train_horizon_metrics['train_Horizon_topk_accuracy']:.4f}\n"
                 f"- Horizon Precision: {train_horizon_metrics['train_Horizon_precision']:.4f}\n"
@@ -195,7 +194,7 @@ class End2EndLSTMEmbed(Experiment):
                 f"- Depth IoU: {val_depth_metrics['val_Depth_IoU']:.4f}\n"
                 f"- Tabulars:\n"
                 f"{self._fancy_print(epoch_metrics, key_prefix='val_')}\n"
-                f"- Horizon (Cosine) Loss: {val_horizon_metrics['val_Horizon_cosine_loss']:.4f}\n"
+                f"- Horizon (Cross-Entropy) Loss: {val_horizon_metrics['val_Horizon_cross_entropy_loss']:.4f}\n"
                 f"- Horizon Accuracy: {val_horizon_metrics['val_Horizon_accuracy']:.4f}\n"
                 f"- Horizon Top-{self.hor_topk} Accuracy: {val_horizon_metrics['val_Horizon_topk_accuracy']:.4f}\n"
                 f"- Horizon Precision: {val_horizon_metrics['val_Horizon_precision']:.4f}\n"
@@ -263,7 +262,7 @@ class End2EndLSTMEmbed(Experiment):
             f"- Depth IoU: {test_depth_metrics['test_Depth_IoU']:.4f}\n"
             f"- Tabulars:\n"
             f"{self._fancy_print(test_metrics, key_prefix='test_')}\n"
-            f"- Horizon (Cosine) Loss: {test_horizon_metrics['test_Horizon_cosine_loss']:.4f}\n"
+            f"- Horizon (Cross-Entropy) Loss: {test_horizon_metrics['test_Horizon_cross_entropy_loss']:.4f}\n"
             f"- Horizon Accuracy: {test_horizon_metrics['test_Horizon_accuracy']:.4f}\n"
             f"- Horizon Top-{self.hor_topk} Accuracy: {test_horizon_metrics['test_Horizon_topk_accuracy']:.4f}\n"
             f"- Horizon Precision: {test_horizon_metrics['test_Horizon_precision']:.4f}\n"
@@ -297,7 +296,7 @@ class End2EndLSTMEmbed(Experiment):
             
             # Parameters for horizon predictor:
             segments_tabular_output_dim = self.hyperparameters['segments_tabular_output_dim'],
-            embedding_dim               = np.shape(self.dataprocessor.embeddings_dict['embedding'])[1]
+            embedding_dim               = np.shape(self.dataprocessor.embeddings_dict['embedding'])[0]
         )
     
     def plot_losses(self, model_output_dir, wandb_image_logging):
@@ -311,7 +310,7 @@ class End2EndLSTMEmbed(Experiment):
             'Carbonate':  [epoch_metrics.get('train_Karbonat_loss', float('nan')) for epoch_metrics in self.histories],
             'Humus':      [epoch_metrics.get('train_Humusgehaltsklasse_loss', float('nan')) for epoch_metrics in self.histories],
             'Rooting':    [epoch_metrics.get('train_Durchwurzelung_loss', float('nan')) for epoch_metrics in self.histories],
-            'Horizon':    [epoch_metrics.get('train_Horizon_cosine_loss', float('nan')) for epoch_metrics in self.histories],
+            'Horizon':    [epoch_metrics.get('train_Horizon_cross_entropy_loss', float('nan')) for epoch_metrics in self.histories],
             'Total':      [epoch_metrics.get('train_loss', float('nan')) for epoch_metrics in self.histories]
         }
         all_val_losses = {
@@ -322,7 +321,7 @@ class End2EndLSTMEmbed(Experiment):
             'Carbonate':  [epoch_metrics.get('val_Karbonat_loss', float('nan')) for epoch_metrics in self.histories],
             'Humus':      [epoch_metrics.get('val_Humusgehaltsklasse_loss', float('nan')) for epoch_metrics in self.histories],
             'Rooting':    [epoch_metrics.get('val_Durchwurzelung_loss', float('nan')) for epoch_metrics in self.histories],
-            'Horizon':    [epoch_metrics.get('val_Horizon_cosine_loss', float('nan')) for epoch_metrics in self.histories],
+            'Horizon':    [epoch_metrics.get('val_Horizon_cross_entropy_loss', float('nan')) for epoch_metrics in self.histories],
             'Total':      [epoch_metrics.get('val_loss', float('nan')) for epoch_metrics in self.histories]
         }
         all_train_metrics = {
@@ -495,7 +494,7 @@ class End2EndLSTMEmbed(Experiment):
                 
                 
                 ### Predictions for all (sub)tasks
-                padded_pred_depths, padded_pred_tabulars, padded_pred_horizon_embeddings = model(
+                padded_pred_depths, padded_pred_tabulars, padded_pred_logits = model(
                     padded_images,
                     image_mask,
                     geotemp_features[:, 1:], # 'index' column not used in model
@@ -512,9 +511,8 @@ class End2EndLSTMEmbed(Experiment):
                 humus_predictions     = pred_tabulars['Humusgehaltsklasse']
                 rooting_predictions   = pred_tabulars['Durchwurzelung']
                 
-                pred_horizon_embeddings   = torch.stack([pred for pred, lab in zip(padded_pred_horizon_embeddings.view(-1, padded_pred_horizon_embeddings.size(-1)), padded_true_horizon_indices.view(-1)) if lab != -1]).to(device)
-                pred_topk_horizon_indices = torch.topk(torch.matmul(pred_horizon_embeddings, self.label_embeddings_tensor.T), k=self.hor_topk, dim=1).indices
-
+                pred_logits = padded_pred_logits.view(-1, padded_pred_logits.size(-1))[mask.view(-1)]  # Apply mask
+                pred_topk_horizon_indices = torch.topk(padded_pred_logits.view(-1, padded_pred_logits.size(-1)), k=self.hor_topk, dim=1).indices[mask.view(-1)]  # Apply same mask
 
                 ### Calculate losses
                 ## Depth loss
@@ -529,11 +527,7 @@ class End2EndLSTMEmbed(Experiment):
                 rooting_loss   = self.cross_entropy_loss(rooting_predictions, rooting_labels)
                 
                 ## Horizon loss
-                # Normalize pred. embeddings for the cosine loss, true embeddings are already normalized
-                pred_horizon_embeddings = F.normalize(pred_horizon_embeddings, p=2, dim=1)
-                # Create a dummy "same class" tensor with 1s for the cosine similarity
-                same_class = torch.ones(pred_horizon_embeddings.size(0)).to(device)
-                horizon_loss = self.cosine_loss(pred_horizon_embeddings, true_horizon_embeddings, same_class)
+                horizon_loss = self.cross_entropy_loss(pred_logits, true_horizon_indices)
 
                 ## Total loss (sum of all losses)
                 total_loss = 10*depth_loss + stones_loss/10. + soiltype_loss + soilcolor_loss + carbonate_loss + humus_loss + rooting_loss + 10*horizon_loss
@@ -565,8 +559,8 @@ class End2EndLSTMEmbed(Experiment):
                 _, topk_humus_predictions     = torch.topk(humus_predictions, self.tab_topk)
                 _, topk_rooting_predictions   = torch.topk(rooting_predictions, self.tab_topk)
                 
-                horizon_correct      += self.hor_topk_acc(1)(pred_horizon_embeddings, true_horizon_indices)
-                horizon_topk_correct += self.hor_topk_acc(self.hor_topk)(pred_horizon_embeddings, true_horizon_indices)
+                horizon_correct      += top_k_accuracy(pred_logits, true_horizon_indices, 1)
+                horizon_topk_correct += top_k_accuracy(pred_logits, true_horizon_indices, self.hor_topk)
 
                 # Add predictions and true values to lists (for bisector)
                 self.stones_predictions[mode].append(stones_predictions.detach().cpu())
@@ -705,7 +699,7 @@ class End2EndLSTMEmbed(Experiment):
         }
         precision_at_k, recall_at_k = precision_recall_at_k(all_horizon_labels, topk_horizon_predictions.numpy(), all_labels=self.hor_possible_labels, average=self.hor_class_average)
         horizon_metrics = {
-            f'{mode}_Horizon_cosine_loss': run_horizon_loss,
+            f'{mode}_Horizon_cross_entropy_loss': run_horizon_loss,
             f'{mode}_Horizon_accuracy': eval_horizon_acc,
             f'{mode}_Horizon_topk_accuracy': eval_horizon_topk_acc,
             f'{mode}_Horizon_precision': precision_score(all_horizon_labels, top1_horizon_predictions.numpy(), labels=self.hor_possible_labels, average=self.hor_class_average, zero_division=0),
