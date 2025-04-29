@@ -299,7 +299,8 @@ class End2EndLSTM(Experiment):
             embedding_dim               = np.shape(self.dataprocessor.embeddings_dict['embedding'])[0],
             
             # Parameters for the model:
-            teacher_forcing_stop_epoch  = self.hyperparameters['teacher_forcing_stop_epoch']
+            teacher_forcing_stop_epoch  = self.hyperparameters['teacher_forcing_stop_epoch'],
+            teacher_forcing_approach    = self.hyperparameters['teacher_forcing_approach']
         )
     
     def plot_losses(self, model_output_dir, wandb_image_logging):
@@ -782,5 +783,6 @@ class End2EndLSTM(Experiment):
             'segments_tabular_output_dim': 256,
             
             # Parameters for model:
-            'teacher_forcing_stop_epoch': 5
+            'teacher_forcing_stop_epoch': 5,
+            'teacher_forcing_approach': 'linear' # 'linear' or 'binary'
         }
