@@ -394,7 +394,7 @@ class End2EndLSTMEmbed(Experiment):
 
         # Optionally log the plot to wandb
         if wandb_image_logging:
-            wandb.log({"Training Metrics": wandb.Image(plot_path)})
+            wandb.log({"Training Metrics": wandb.Image(fig)})
         plt.close(fig)
         
         ### Plot the bisector line for stones predictions
@@ -429,9 +429,9 @@ class End2EndLSTMEmbed(Experiment):
             plt.close()
             
         ### Plot confusion matrix for horizon predictions
-        self._plot_confusion_matrix(labels=self.hor_labels['train'], predictions=self.hor_predictions['train'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='train')
-        self._plot_confusion_matrix(labels=self.hor_labels['val'], predictions=self.hor_predictions['val'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='val')
-        self._plot_confusion_matrix(labels=self.hor_labels['test'], predictions=self.hor_predictions['test'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='test')
+        self._plot_confusion_matrices(labels=self.hor_labels['train'], predictions=self.hor_predictions['train'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='train')
+        self._plot_confusion_matrices(labels=self.hor_labels['val'], predictions=self.hor_predictions['val'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='val')
+        self._plot_confusion_matrices(labels=self.hor_labels['test'], predictions=self.hor_predictions['test'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='test')
 
     def _run_model(self, data_loader, device, model, mode='val', optimizer=None):
         ### Initialize losses and metrics

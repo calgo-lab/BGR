@@ -238,7 +238,7 @@ class SimpleDepthsGeotempsCrossAttention(Experiment):
         
         plt.savefig(f'{model_output_dir}/losses_and_iou_scores.pdf', bbox_inches='tight', format='pdf')
         if wandb_image_logging:
-            wandb.log({"Losses and IoU Scores": wandb.Image(plt)})
+            wandb.log({"Losses and IoU Scores": wandb.Image(figure)})
     
     def _train_model(self, train_loader, device, model, optimizer):
         train_loss_total = 0.0
