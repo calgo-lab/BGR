@@ -298,7 +298,10 @@ class End2EndLSTMResNetEmbed(Experiment):
             
             # Parameters for horizon predictor:
             segments_tabular_output_dim = self.hyperparameters['segments_tabular_output_dim'],
-            embedding_dim               = np.shape(self.dataprocessor.embeddings_dict['embedding'])[1]
+            embedding_dim               = np.shape(self.dataprocessor.embeddings_dict['embedding'])[1],
+            
+            # Parameters for the model:
+            teacher_forcing_stop_epoch  = self.hyperparameters['teacher_forcing_stop_epoch']
         )
     
     def plot_losses(self, model_output_dir, wandb_image_logging):
@@ -358,13 +361,13 @@ class End2EndLSTMResNetEmbed(Experiment):
         plt.tight_layout(rect=[0, 0, 1, 0.96])
 
         # Save the plot to the specified directory
-        plot_path = os.path.join(model_output_dir, 'training_losses.png')
-        plt.savefig(plot_path)
+        plot_path = os.path.join(model_output_dir, 'training_losses.pdf')
+        plt.savefig(plot_path, bbox_inches='tight', format='pdf')
         logger.info(f"Loss plot saved to {plot_path}")
 
         # Optionally log the plot to wandb
         if wandb_image_logging:
-            wandb.log({"Training Losses": wandb.Image(plot_path)})
+            wandb.log({"Training Losses": wandb.Image(fig)})
         plt.close(fig)
         
         ### Plot extra metrics
@@ -386,8 +389,8 @@ class End2EndLSTMResNetEmbed(Experiment):
         plt.tight_layout(rect=[0, 0, 1, 0.96])
 
         # Save the plot to the specified directory
-        plot_path = os.path.join(model_output_dir, 'training_metrics.png')
-        plt.savefig(plot_path)
+        plot_path = os.path.join(model_output_dir, 'training_metrics.pdf')
+        plt.savefig(plot_path, bbox_inches='tight', format='pdf')
         logger.info(f"Metrics plot saved to {plot_path}")
 
         # Optionally log the plot to wandb
@@ -402,7 +405,7 @@ class End2EndLSTMResNetEmbed(Experiment):
             predicted_values = self.stones_predictions[split]
 
             # Create scatter plot
-            plt.figure(figsize=(8, 8))
+            fig = plt.figure(figsize=(8, 8))
             lims = [min(true_values), max(true_values)]
             plt.axes(aspect='equal')
             plt.scatter(true_values, predicted_values, alpha=0.5, label=f'{split.capitalize()} Data', color='blue')
@@ -416,13 +419,13 @@ class End2EndLSTMResNetEmbed(Experiment):
             plt.grid(True)
 
             # Save the plot
-            plot_path = os.path.join(model_output_dir, f'stones_predictions_{split}.png')
-            plt.savefig(plot_path)
+            plot_path = os.path.join(model_output_dir, f'stones_predictions_{split}.pdf')
+            plt.savefig(plot_path, bbox_inches='tight', format='pdf')
             logger.info(f"Stones prediction plot for {split} saved to {plot_path}")
 
             # Optionally log the plot to wandb
             if wandb_image_logging:
-                wandb.log({f"Stones Predictions ({split.capitalize()})": wandb.Image(plot_path)})
+                wandb.log({f"Stones Predictions ({split.capitalize()})": wandb.Image(fig)})
 
             plt.close()
             
@@ -784,5 +787,8 @@ class End2EndLSTMResNetEmbed(Experiment):
             'tab_num_lstm_layers': 2,
             
             # Parameters for horizon predictor:
-            'segments_tabular_output_dim': 256
+            'segments_tabular_output_dim': 256,
+            
+            # Parameters for model:
+            'teacher_forcing_stop_epoch': 5
         }

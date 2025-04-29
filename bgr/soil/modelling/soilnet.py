@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from bgr.soil.modelling.depth.depth_modules import LSTMDepthMarkerPredictor
+from bgr.soil.modelling.depth.depth_modules import LSTMDepthMarkerPredictorWithGuardrails
 from bgr.soil.modelling.geotemp_modules import GeoTemporalEncoder
 from bgr.soil.modelling.horizon.horizon_modules import HorizonEmbedder, HorizonLSTMEmbedder
 from bgr.soil.modelling.image_modules import PatchCNNEncoder, ResNetEncoder, ResNetPatchEncoder, MaskedResNetImageEncoder
@@ -15,7 +15,7 @@ class SoilNet_LSTM(nn.Module):
     All task models are LSTM-based.
     """
     def __init__(
-        self,
+        self,        
         # Parameters for image encoder, geotemp encoder and depth predictor:
         geo_temp_input_dim : int, 
         geo_temp_output_dim : int = 256, # params for geotemp encoder
@@ -43,6 +43,10 @@ class SoilNet_LSTM(nn.Module):
         #hor_num_lstm_layers : int = 2, # should we allow the user to select this?
         embedding_dim : int = 61,
         #embed_horizons_linearly : bool = True # will always be true, since only LSTMs are used here
+        
+        # Parameters for the model:
+        teacher_forcing_stop_epoch : int = 5,
+        teacher_forcing_approach : str = 'linear_probabilistic', # 'linear_probabilistic' or 'binary'
     ):
         super(SoilNet_LSTM, self).__init__()
         
@@ -78,7 +82,7 @@ class SoilNet_LSTM(nn.Module):
         self.geo_temp_encoder = GeoTemporalEncoder(self.geo_temp_input_dim, self.geo_temp_output_dim)
         
         # Depth marker predictor
-        self.depth_marker_predictor = LSTMDepthMarkerPredictor(self.image_encoder_output_dim + self.geo_temp_output_dim, self.depth_rnn_hidden_dim, self.max_seq_len, self.stop_token)
+        self.depth_marker_predictor = LSTMDepthMarkerPredictorWithGuardrails(self.image_encoder_output_dim + self.geo_temp_output_dim, self.depth_rnn_hidden_dim, self.max_seq_len, self.stop_token)
         
         # Tabular predictors (one for each tabular)
         self.tabular_predictors = nn.ModuleDict()
@@ -104,6 +108,19 @@ class SoilNet_LSTM(nn.Module):
         self.horizon_embedder = HorizonLSTMEmbedder(input_dim = self.segment_encoder_output_dim + self.geo_temp_output_dim + self.segments_tabular_output_dim, 
                                                     output_dim = self.embedding_dim, hidden_dim = 256)
         
+        self.epoch = 0
+        self.teacher_forcing_probs = {
+            epoch: 1 - ((epoch - 1) / teacher_forcing_stop_epoch) if teacher_forcing_approach == 'linear_probabilistic' else 1.0
+            for epoch in range(1, teacher_forcing_stop_epoch + 1)
+        }
+        self.teacher_forcing_stop_epoch = teacher_forcing_stop_epoch
+    
+    def train(self, mode = True):
+        # Increase epoch counter if model was set to training mode
+        if mode:
+            self.epoch += 1
+        return super().train(mode)
+    
     def forward(self, padded_image, image_mask, geo_temp_features, true_padded_depths=None, true_tabular_features=None):
         """
         Forward pass of the model.
@@ -137,6 +154,12 @@ class SoilNet_LSTM(nn.Module):
         # Here we only need to extract them once and reuse them in subsequent tasks.
         # Maybe modify the task models to accept pretrained image/segment/geotemp features as input?
         
+        # Decide whether to use teacher forcing in this step based on the current epoch
+        if self.epoch < self.teacher_forcing_stop_epoch + 1:
+            teacher_forcing_decision = self.teacher_forcing_decision(self.teacher_forcing_probs[self.epoch])
+        else:
+            teacher_forcing_decision = False
+        
         # Extract image + geotemp features, then concatenate them
         image_features = self.image_encoder(padded_image, image_mask)
         geo_temp_features = self.geo_temp_encoder(geo_temp_features)
@@ -146,8 +169,8 @@ class SoilNet_LSTM(nn.Module):
         depth_markers = self.depth_marker_predictor(img_geotemp_vector)
         
         ### TASK 2: Predict tabular features for each segment
-        # TODO: Refine this processing. For now, use ground truth if available (teacher forcing),
-        if self.training and true_padded_depths is not None:
+        # Use ground truth if teacher forcing decision is true
+        if teacher_forcing_decision and true_padded_depths is not None:
             processed_depth_markers = true_padded_depths # Use ground_truth
         else:
             processed_depth_markers = depth_markers # Use predicted depths if not training
@@ -184,7 +207,7 @@ class SoilNet_LSTM(nn.Module):
             tabular_predictions[key] = predictor(segment_geotemp_features)
         
         ### TASK 3: Compute horizon embedding from the final concatenated vector
-        if self.training and true_tabular_features is not None:
+        if teacher_forcing_decision and true_tabular_features is not None:
             # Use ground truth tabular features if available
             processed_tabular_features = true_tabular_features.view(batch_size, num_segments, -1)
         else:
@@ -276,6 +299,15 @@ class SoilNet_LSTM(nn.Module):
             segments_batch.append(seg_tensor)
 
         return torch.stack(segments_batch, dim=0)  # (N, ...)
+    
+    def teacher_forcing_decision(self, probability):
+        """
+        Decides whether to use teacher forcing based on the given probability and training mode.
+        """
+        if self.training:
+            return torch.rand(1).item() < probability
+        else:
+            return False
 
 
 # DEPRECATED:
@@ -300,7 +332,7 @@ class HorizonClassifier(nn.Module):
         #self.depth_marker_predictor = TransformerDepthMarkerPredictor(self.image_encoder.num_img_features + geo_temp_output_dim,
         #                                                              transformer_dim, num_transformer_heads, num_transformer_layers,
         #                                                              max_seq_len, stop_token)
-        self.depth_marker_predictor = LSTMDepthMarkerPredictor(self.image_encoder.num_img_features + geo_temp_output_dim, rnn_hidden_dim, max_seq_len, stop_token)
+        self.depth_marker_predictor = LSTMDepthMarkerPredictorWithGuardrails(self.image_encoder.num_img_features + geo_temp_output_dim, rnn_hidden_dim, max_seq_len, stop_token)
 
         self.segment_encoder = ResNetEncoder(resnet_version='18') # after predicting the depths, the original image is cropped and fed into another vision model
 

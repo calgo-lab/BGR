@@ -86,13 +86,14 @@ class Experiment(ABC):
         
         # Save the figure
         os.makedirs(model_output_dir, exist_ok=True)
-        cm_path = os.path.join(model_output_dir, f'confusion_matrix_{mode}.png')
-        plt.savefig(cm_path, bbox_inches='tight')
-        plt.close(fig)
+        cm_path = os.path.join(model_output_dir, f'confusion_matrix_{mode}.pdf')
+        plt.savefig(cm_path, bbox_inches='tight', format='pdf')        
         
         # Log to Weights & Biases if enabled
         if wandb_image_logging:
-            wandb.log({f"Confusion Matrix {mode}": wandb.Image(cm_path)})
+            wandb.log({f"Confusion Matrix {mode}": wandb.Image(fig)})
+        
+        plt.close(fig)
     
     @staticmethod
     def get_experiment_hyperparameters() -> dict:
