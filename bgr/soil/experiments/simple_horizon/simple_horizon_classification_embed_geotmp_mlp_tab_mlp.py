@@ -341,7 +341,7 @@ class SimpleHorizonClassificationWithEmbeddingsGeotempsMLPTabMLP(Experiment):
         
         plt.tight_layout()
         
-        plt.savefig(f'{model_output_dir}/losses_and_accuracies.png')
+        plt.savefig(f'{model_output_dir}/losses_and_accuracies.pdf', bbox_inches='tight', format='pdf')
         if wandb_image_logging:
             wandb.log({"Losses and Accuracies": wandb.Image(figure)})
         

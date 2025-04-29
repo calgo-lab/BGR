@@ -360,13 +360,13 @@ class End2EndLSTMEmbed(Experiment):
         plt.tight_layout(rect=[0, 0, 1, 0.96])
 
         # Save the plot to the specified directory
-        plot_path = os.path.join(model_output_dir, 'training_losses.png')
-        plt.savefig(plot_path)
+        plot_path = os.path.join(model_output_dir, 'training_losses.pdf')
+        plt.savefig(plot_path, bbox_inches='tight', format='pdf')
         logger.info(f"Loss plot saved to {plot_path}")
 
         # Optionally log the plot to wandb
         if wandb_image_logging:
-            wandb.log({"Training Losses": wandb.Image(plot_path)})
+            wandb.log({"Training Losses": wandb.Image(fig)})
         plt.close(fig)
         
         ### Plot extra metrics
@@ -388,8 +388,8 @@ class End2EndLSTMEmbed(Experiment):
         plt.tight_layout(rect=[0, 0, 1, 0.96])
 
         # Save the plot to the specified directory
-        plot_path = os.path.join(model_output_dir, 'training_metrics.png')
-        plt.savefig(plot_path)
+        plot_path = os.path.join(model_output_dir, 'training_metrics.pdf')
+        plt.savefig(plot_path, bbox_inches='tight', format='pdf')
         logger.info(f"Metrics plot saved to {plot_path}")
 
         # Optionally log the plot to wandb
@@ -404,7 +404,7 @@ class End2EndLSTMEmbed(Experiment):
             predicted_values = self.stones_predictions[split]
 
             # Create scatter plot
-            plt.figure(figsize=(8, 8))
+            fig = plt.figure(figsize=(8, 8))
             lims = [min(true_values), max(true_values)]
             plt.axes(aspect='equal')
             plt.scatter(true_values, predicted_values, alpha=0.5, label=f'{split.capitalize()} Data', color='blue')
@@ -418,13 +418,13 @@ class End2EndLSTMEmbed(Experiment):
             plt.grid(True)
 
             # Save the plot
-            plot_path = os.path.join(model_output_dir, f'stones_predictions_{split}.png')
-            plt.savefig(plot_path)
+            plot_path = os.path.join(model_output_dir, f'stones_predictions_{split}.pdf')
+            plt.savefig(plot_path, bbox_inches='tight', format='pdf')
             logger.info(f"Stones prediction plot for {split} saved to {plot_path}")
 
             # Optionally log the plot to wandb
             if wandb_image_logging:
-                wandb.log({f"Stones Predictions ({split.capitalize()})": wandb.Image(plot_path)})
+                wandb.log({f"Stones Predictions ({split.capitalize()})": wandb.Image(fig)})
 
             plt.close()
             

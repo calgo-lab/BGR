@@ -234,7 +234,7 @@ class SimpleDepthsGeotemps(Experiment):
             plt.grid()
         plt.tight_layout()
         
-        plt.savefig(f'{model_output_dir}/losses_and_iou_scores.png')
+        plt.savefig(f'{model_output_dir}/losses_and_iou_scores.pdf', bbox_inches='tight', format='pdf')
         if wandb_image_logging:
             wandb.log({"Losses and IoU Scores": wandb.Image(plt)})
     
