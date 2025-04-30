@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 import pandas as pd
 import torch.nn as nn
 import os
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, accuracy_score
 import matplotlib.pyplot as plt
 import seaborn as sns
 import wandb
@@ -67,6 +67,9 @@ class Experiment(ABC):
             return capitals[-1] if capitals else label[0]
         
         def plot_and_save_cm(labels, predictions, possible_labels, agg_level='terminal'):
+            # Calculate accuracy score based on the current level's labels/predictions
+            accuracy = accuracy_score(labels, predictions)
+            
             # Compute confusion matrix
             cm = confusion_matrix(labels, predictions, labels=possible_labels, normalize='true')
             
@@ -80,7 +83,7 @@ class Experiment(ABC):
             ax.set_aspect('equal')
             ax.set_xlabel('Predicted Labels')
             ax.set_ylabel('True Labels')
-            ax.set_title(f'Confusion Matrix {mode}', fontsize=14)
+            ax.set_title(f'Confusion Matrix - Accuracy: {accuracy:.4f}', fontsize=14)
             
             # Save the figure
             os.makedirs(model_output_dir, exist_ok=True)
