@@ -221,7 +221,8 @@ class End2EndLSTMResNetEmbed(Experiment):
     def test(self,
         model: nn.Module,
         test_df: pd.DataFrame,
-        model_output_dir: str # do we need this?
+        model_output_dir: str,
+        wandb_image_logging: bool
     ) -> dict:
         test_dataset = ImageTabularEnd2EndDataset(
             dataframe=test_df,
@@ -274,6 +275,13 @@ class End2EndLSTMResNetEmbed(Experiment):
             "--------------------------------"
         )
         
+        # Plot confusion matrix for horizon predictions
+        if len(self.hor_labels['train']) != 0:
+            self._plot_confusion_matrices(labels=self.hor_labels['train'], predictions=self.hor_predictions['train'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='train')
+        if len(self.hor_labels['val']) != 0:
+            self._plot_confusion_matrices(labels=self.hor_labels['val'], predictions=self.hor_predictions['val'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='val')
+        self._plot_confusion_matrices(labels=self.hor_labels['test'], predictions=self.hor_predictions['test'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='test')
+        
         return test_metrics
     
     def get_model(self) -> nn.Module:
@@ -301,7 +309,8 @@ class End2EndLSTMResNetEmbed(Experiment):
             embedding_dim               = np.shape(self.dataprocessor.embeddings_dict['embedding'])[1],
             
             # Parameters for the model:
-            teacher_forcing_stop_epoch  = self.hyperparameters['teacher_forcing_stop_epoch']
+            teacher_forcing_stop_epoch  = self.hyperparameters['teacher_forcing_stop_epoch'],
+            teacher_forcing_approach    = self.hyperparameters['teacher_forcing_approach']
         )
     
     def plot_losses(self, model_output_dir, wandb_image_logging):
@@ -428,11 +437,6 @@ class End2EndLSTMResNetEmbed(Experiment):
                 wandb.log({f"Stones Predictions ({split.capitalize()})": wandb.Image(fig)})
 
             plt.close()
-            
-        ### Plot confusion matrix for horizon predictions
-        self._plot_confusion_matrices(labels=self.hor_labels['train'], predictions=self.hor_predictions['train'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='train')
-        self._plot_confusion_matrices(labels=self.hor_labels['val'], predictions=self.hor_predictions['val'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='val')
-        self._plot_confusion_matrices(labels=self.hor_labels['test'], predictions=self.hor_predictions['test'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='test')
 
     def _run_model(self, data_loader, device, model, mode='val', optimizer=None):
         ### Initialize losses and metrics
@@ -790,5 +794,6 @@ class End2EndLSTMResNetEmbed(Experiment):
             'segments_tabular_output_dim': 256,
             
             # Parameters for model:
-            'teacher_forcing_stop_epoch': 5
+            'teacher_forcing_stop_epoch': 5,
+            'teacher_forcing_approach': 'linear' # 'linear' or 'binary'
         }
