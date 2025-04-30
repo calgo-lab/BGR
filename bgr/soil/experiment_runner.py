@@ -73,7 +73,7 @@ class ExperimentRunner:
             self._load_model(model_file_path, model)
             
             # Test the model
-            test_metrics = experiment.test(model, self.test_data, model_file_path)
+            test_metrics = experiment.test(model, self.test_data, model_file_path, self.wandb_plot_logging)
             wandb.log(test_metrics)
             
             return test_metrics
@@ -120,7 +120,7 @@ class ExperimentRunner:
             self._save_model(model, model_output_dir)
             
             # Test the model
-            test_metrics = experiment.test(model, self.test_data, model_output_dir)
+            test_metrics = experiment.test(model, self.test_data, model_output_dir, self.wandb_plot_logging)
             wandb.log(test_metrics)
             
             # Plot the losses

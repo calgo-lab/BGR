@@ -150,7 +150,8 @@ class SimpleDepthsGeotemps(Experiment):
     def test(self,
         model: nn.Module,
         test_df: pd.DataFrame,
-        model_output_dir: str
+        model_output_dir: str,
+        wandb_image_logging: bool
     ) -> dict:
         
         test_dataset = ImageTabularDataset(

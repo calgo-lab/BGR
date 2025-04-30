@@ -220,7 +220,8 @@ class End2EndLSTMResNet(Experiment):
     def test(self,
         model: nn.Module,
         test_df: pd.DataFrame,
-        model_output_dir: str # do we need this?
+        model_output_dir: str,
+        wandb_image_logging: bool
     ) -> dict:
         test_dataset = ImageTabularEnd2EndDataset(
             dataframe=test_df,
@@ -272,6 +273,13 @@ class End2EndLSTMResNet(Experiment):
             f"- Horizon Recall@{self.hor_topk}: {test_horizon_metrics['test_Horizon_recall_at_k']:.4f}\n"
             "--------------------------------"
         )
+        
+        # Plot confusion matrix for horizon predictions
+        if len(self.hor_labels['train']) != 0:
+            self._plot_confusion_matrices(labels=self.hor_labels['train'], predictions=self.hor_predictions['train'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='train')
+        if len(self.hor_labels['val']) != 0:
+            self._plot_confusion_matrices(labels=self.hor_labels['val'], predictions=self.hor_predictions['val'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='val')
+        self._plot_confusion_matrices(labels=self.hor_labels['test'], predictions=self.hor_predictions['test'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='test')
         
         return test_metrics
     
@@ -428,11 +436,6 @@ class End2EndLSTMResNet(Experiment):
                 wandb.log({f"Stones Predictions ({split.capitalize()})": wandb.Image(fig)})
 
             plt.close()
-            
-        ### Plot confusion matrix for horizon predictions
-        self._plot_confusion_matrices(labels=self.hor_labels['train'], predictions=self.hor_predictions['train'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='train')
-        self._plot_confusion_matrices(labels=self.hor_labels['val'], predictions=self.hor_predictions['val'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='val')
-        self._plot_confusion_matrices(labels=self.hor_labels['test'], predictions=self.hor_predictions['test'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='test')
 
     def _run_model(self, data_loader, device, model, mode='val', optimizer=None):
         ### Initialize losses and metrics
