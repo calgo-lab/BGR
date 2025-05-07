@@ -150,7 +150,7 @@ def main(args : argparse.Namespace):
     if args.inference_model_file:
         # Run inference on the test data using a pre-trained model
         # TODO: Will probably not work because of hyperparameters
-        test_metrics = experimenter.run_inference(training_args, args.inference_model_file, timestamp, wandb_offline=args.wandb_offline)
+        test_metrics = experimenter.run_inference(training_args, args.inference_model_file, args.model_output_dir, timestamp, wandb_offline=args.wandb_offline)
     else:
         # Train, validate and test the model according to the model arguments
         metrics = experimenter.run_train_val_test(training_args, args.model_output_dir, timestamp, wandb_offline=args.wandb_offline)

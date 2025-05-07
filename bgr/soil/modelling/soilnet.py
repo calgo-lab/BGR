@@ -155,7 +155,7 @@ class SoilNet_LSTM(nn.Module):
         # Maybe modify the task models to accept pretrained image/segment/geotemp features as input?
         
         # Decide whether to use teacher forcing in this step based on the current epoch
-        if self.epoch < self.teacher_forcing_stop_epoch + 1:
+        if self.training and self.epoch < self.teacher_forcing_stop_epoch + 1:
             teacher_forcing_decision = self.teacher_forcing_decision(self.teacher_forcing_probs[self.epoch])
         else:
             teacher_forcing_decision = False

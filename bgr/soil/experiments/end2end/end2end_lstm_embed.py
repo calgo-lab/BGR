@@ -276,9 +276,9 @@ class End2EndLSTMEmbed(Experiment):
         )
         
         # Plot confusion matrix for horizon predictions
-        if len(self.hor_labels['train']) != 0:
+        if self.hor_labels['train']:
             self._plot_confusion_matrices(labels=self.hor_labels['train'], predictions=self.hor_predictions['train'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='train')
-        if len(self.hor_labels['val']) != 0:
+        if self.hor_labels['val']:
             self._plot_confusion_matrices(labels=self.hor_labels['val'], predictions=self.hor_predictions['val'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='val')
         self._plot_confusion_matrices(labels=self.hor_labels['test'], predictions=self.hor_predictions['test'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='test')
         
