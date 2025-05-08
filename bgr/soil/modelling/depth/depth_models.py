@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from bgr.soil.modelling.depth.depth_modules import LSTMDepthMarkerPredictor, CrossAttentionTransformerDepthMarkerPredictor
+from bgr.soil.modelling.depth.depth_modules import LSTMDepthMarkerPredictorWithGuardrails, CrossAttentionTransformerDepthMarkerPredictorWithGuardrails
 from bgr.soil.modelling.geotemp_modules import GeoTemporalEncoder
 from bgr.soil.modelling.image_modules import PatchCNNEncoder, ResNetPatchEncoder
 
@@ -26,7 +26,7 @@ class SimpleDepthModel(nn.Module):
             self.image_encoder = PatchCNNEncoder(output_dim=image_encoder_output_dim, patch_size=patch_size, patch_stride=patch_size)
         self.geo_temp_encoder = GeoTemporalEncoder(geo_temp_input_dim, geo_temp_output_dim)
 
-        self.depth_marker_predictor = LSTMDepthMarkerPredictor(image_encoder_output_dim + geo_temp_output_dim, rnn_hidden_dim, max_seq_len, stop_token)
+        self.depth_marker_predictor = LSTMDepthMarkerPredictorWithGuardrails(image_encoder_output_dim + geo_temp_output_dim, rnn_hidden_dim, max_seq_len, stop_token)
 
     def forward(self, images, geo_temp):
         # Extract image + geotemp features, then concatenate them
@@ -64,7 +64,7 @@ class SimpleDepthModelCrossAttention(nn.Module):
             self.image_encoder = PatchCNNEncoder(output_dim=image_encoder_output_dim, patch_size=patch_size, patch_stride=patch_size)
         self.geo_temp_encoder = GeoTemporalEncoder(geo_temp_input_dim, geo_temp_output_dim)
 
-        self.depth_marker_predictor = CrossAttentionTransformerDepthMarkerPredictor(image_encoder_output_dim + geo_temp_output_dim,
+        self.depth_marker_predictor = CrossAttentionTransformerDepthMarkerPredictorWithGuardrails(image_encoder_output_dim + geo_temp_output_dim,
                                                                                     decoder_hidden_dim, max_seq_len, stop_token,
                                                                                     decoder_num_heads, decoder_num_layers)
 

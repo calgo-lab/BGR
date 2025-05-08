@@ -158,6 +158,79 @@ class CrossAttentionTransformerDepthMarkerPredictor(nn.Module):
 
         return depth_markers
 
+class CrossAttentionTransformerDepthMarkerPredictorWithGuardrails(nn.Module):
+    def __init__(self, input_dim, hidden_dim=256, max_seq_len=10, stop_token=1.0, num_heads=8, num_layers=2):
+        super(CrossAttentionTransformerDepthMarkerPredictorWithGuardrails, self).__init__()
+        self.hidden_dim = hidden_dim
+        self.max_seq_len = max_seq_len
+        self.stop_token = stop_token
+
+        # Project input (image-geotemp vector) to hidden dimension
+        self.fc = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(0.2)
+        )
+
+        # Positional encoding for queries
+        self.query_pos = nn.Parameter(torch.randn(max_seq_len, hidden_dim))
+
+        # Query embeddings (learnable)
+        self.query_embed = nn.Parameter(torch.randn(max_seq_len, hidden_dim))
+
+        # Transformer decoder layers (cross-attention)
+        decoder_layer = nn.TransformerDecoderLayer(d_model=hidden_dim, nhead=num_heads, dropout=0.2, batch_first=True)
+        self.transformer_decoder = nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
+
+        # Prediction head
+        self.predictor = nn.Linear(hidden_dim, 1)
+
+    def forward(self, x):
+        """
+        Args:
+            x: (batch_size, input_dim)
+        Returns:
+            depth_markers: (batch_size, max_seq_len)
+        """
+        batch_size = x.size(0)
+        memory = self.fc(x).unsqueeze(1)  # (batch_size, 1, hidden_dim)
+
+        # Repeat the memory to match the query length
+        memory = memory.repeat(1, self.max_seq_len, 1)  # (batch_size, max_seq_len, hidden_dim)
+
+        # Prepare the query (same for all batch)
+        query = self.query_embed.unsqueeze(0).repeat(batch_size, 1, 1)  # (batch_size, max_seq_len, hidden_dim)
+
+        # Apply transformer decoder
+        decoded = self.transformer_decoder(query, memory)  # (batch_size, max_seq_len, hidden_dim)
+
+        # Predict deltas
+        pred_deltas = self.predictor(decoded).squeeze(-1)  # (batch_size, max_seq_len)
+        
+        # Guardrail: Ensure deltas are non-negative
+        pred_deltas = F.relu(pred_deltas)
+        
+        # Initialize depth markers
+        depth_markers = torch.zeros_like(pred_deltas)
+        depth_markers[:, 0] = pred_deltas[:, 0]  # First depth marker is just the delta prediction
+        
+        # Guardrail: Ensure depth markers are non-decreasing
+        # Compute depth markers as cumulative sum of deltas
+        for i in range(1, self.max_seq_len):
+            # Ensure depth markers are non-decreasing
+            depth_markers[:, i] = depth_markers[:, i - 1] + pred_deltas[:, i]
+        
+        # Guardrail: Depth markers should be between 0 and stop_token
+        depth_markers = torch.clamp(depth_markers, min=0, max=self.stop_token)
+        
+        # Round values very near to stop_token and above it to stop_token
+        depth_markers = torch.where(
+            depth_markers > self.stop_token - 0.01,
+            torch.full_like(depth_markers, self.stop_token),
+            depth_markers)
+
+        return depth_markers
 
 # DEPRECATED
 class TransformerDepthMarkerPredictor(nn.Module):
