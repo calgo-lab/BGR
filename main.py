@@ -45,7 +45,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument('--target', type=str, default='Horizontsymbol_relevant') #TODO: Do we need multiple targets?
     parser.add_argument('--train_val_test_frac', type=lambda arg: parse_list(arg, length=3, dtype=float),
         default=[0.6, 0.2, 0.2])
-    parser.add_argument('--label_embedding_path', type=str, default='./BGR/label_embeddings/all_horizons_embeddings.pickle')
+    parser.add_argument('--label_embedding_path', type=str, default='./BGR/label_embeddings/all_horizons_embeddings_thirds.pickle')
 
     # dir-related parameters
     parser.add_argument('--model_output_dir', type=str, default='model_output')
