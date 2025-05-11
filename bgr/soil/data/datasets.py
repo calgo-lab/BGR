@@ -641,14 +641,14 @@ class ImageTabularEnd2EndDataset(Dataset):
                 pass
             else:
                 # Non-empty image segments, geotemp_features, labels
-                tabular_features = []
+                tabular_features = torch.Tensor()
         else:
             if self.tab_num_columns:
                 # Non-empty image segments, tabular_features, labels
-                geotemp_features = []
+                geotemp_features = torch.Tensor()
             else:
                 # Non-empty image segments, labels
-                tabular_features, geotemp_features = [], []
+                tabular_features, geotemp_features = torch.Tensor(), torch.Tensor()
             
         # Always return everything, even if some are empty
         return image, geotemp_features, depths, tabular_features, labels

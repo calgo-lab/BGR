@@ -3,6 +3,8 @@ from .simple_depth.simple_depth_geotmp import SimpleDepthsGeotemps
 from .simple_depth.simple_depth_geotmp_resnet import SimpleDepthsGeotempsResNet
 from .simple_depth.simple_depth_geotmp_cross import SimpleDepthsGeotempsCrossAttention
 from .simple_depth.simple_depth_geotmp_resnet_cross import SimpleDepthsGeotempsResNetCrossAttention
+from .simple_depth.simple_depth_maskedresnet_lstm import SimpleDepthsMaskedResNetLSTM
+from .simple_depth.simple_depth_maskedresnet_cross import SimpleDepthsMaskedResNetCrossAttention
 from .simple_horizon.simple_horizon_classification_embed_geotmp_mlp import SimpleHorizonClassificationEmbeddingsGeotempMLP
 from .simple_horizon.simple_horizon_classification_embed_geotmp_mlp_tab_mlp import SimpleHorizonClassificationWithEmbeddingsGeotempsMLPTabMLP
 from .simple_horizon.simple_horizon_classification import SimpleHorizonClassification
@@ -30,6 +32,10 @@ def get_experiment(experiment_type, training_args, target, dataprocessor) -> Exp
         return SimpleDepthsGeotempsCrossAttention(training_args, target, dataprocessor)
     elif experiment_type == "simple_depths_geotmp_resnet_cross":
         return SimpleDepthsGeotempsResNetCrossAttention(training_args, target, dataprocessor)
+    elif experiment_type == "simple_depths_maskedresnet_lstm":
+        return SimpleDepthsMaskedResNetLSTM(training_args, target, dataprocessor)
+    elif experiment_type == "simple_depths_maskedresnet_cross":
+        return SimpleDepthsMaskedResNetCrossAttention(training_args, target, dataprocessor)
     elif experiment_type == "simple_horizon_classification_embed_geotmp_mlp":
         return SimpleHorizonClassificationEmbeddingsGeotempMLP(training_args, target, dataprocessor)
     elif experiment_type == "simple_horizon_classification_embed_geotmp_mlp_tab_mlp":
@@ -76,6 +82,10 @@ def get_experiment_hyperparameters(experiment_type) -> dict:
         return SimpleDepthsGeotempsCrossAttention.get_experiment_hyperparameters()
     elif experiment_type == "simple_depths_geotmp_resnet_cross":
         return SimpleDepthsGeotempsResNetCrossAttention.get_experiment_hyperparameters()
+    elif experiment_type == "simple_depths_maskedresnet_lstm":
+        return SimpleDepthsMaskedResNetLSTM.get_experiment_hyperparameters()
+    elif experiment_type == "simple_depths_maskedresnet_cross":
+        return SimpleDepthsMaskedResNetCrossAttention.get_experiment_hyperparameters()
     elif experiment_type == "simple_horizon_classification_embed_geotmp_mlp":
         return SimpleHorizonClassificationEmbeddingsGeotempMLP.get_experiment_hyperparameters()
     elif experiment_type == "simple_horizon_classification_embed_geotmp_mlp_tab_mlp":
