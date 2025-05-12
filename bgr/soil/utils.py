@@ -271,3 +271,72 @@ def concat_img_geotemp_depth(img_geotemp_vector, depth_markers, stop_token=1.0):
             tab_inputs.append(tab_input)
 
     return torch.stack(tab_inputs, dim=0)  # Shape: (total_horizons, img_geotemp_dim + 2)
+
+
+def extract_segments(padded_images, image_masks, processed_depth_markers, 
+                    segments_random_patches, patch_cnn_segment_size, num_patches_per_segment, segment_random_patch_size, 
+                    stop_token, max_seq_len):
+    """
+    Extracts segments from a batch of padded images using depth markers.
+    Returns a tensor of shape:
+        - (N, max_seq_len, num_patches, C, H, W)  if segments_random_patches=True
+        - (N, max_seq_len, C, H_patch, W_patch)   otherwise
+    """
+    N, C, H, W = padded_images.shape
+    device = padded_images.device
+
+    # Precreate deterministic resize if needed
+    if not segments_random_patches:
+        H_patch = patch_cnn_segment_size
+        W_patch = 2 * patch_cnn_segment_size
+
+    segments_batch = []
+    for img, mask, depth_row in zip(padded_images, image_masks, processed_depth_markers):
+        # 1) Unpad
+        image = unpad_image_using_mask(img, mask)  # (C, H_img, W_img)
+
+        # 2) Truncate depths at stop_token
+        depths = depth_row.tolist()
+        if stop_token in depths:
+            idx = depths.index(stop_token) + 1
+            depths = depths[:idx]
+
+        # Convert to pixel bounds, prepend 0
+        pixel_bounds = [0] + [int(d * image.shape[1]) for d in depths]
+        num_segs = len(pixel_bounds) - 1
+
+        # 3) Allocate container
+        if segments_random_patches:
+            seg_tensor = torch.zeros(
+                (max_seq_len, num_patches_per_segment, C, segment_random_patch_size, segment_random_patch_size),
+                device=device
+            )
+        else:
+            seg_tensor = torch.zeros(
+                (max_seq_len, C, H_patch, W_patch),
+                device=device
+            )
+
+        # 4) Crop & process each segment
+        for j in range(num_segs):
+            uppper, lower = pixel_bounds[j], pixel_bounds[j + 1]
+            cropped = image[:, uppper:lower, :]  # (C, seg_h, W)
+
+            if segments_random_patches:
+                patches = [
+                    tensor_random_crop_reflect(cropped, segment_random_patch_size)
+                    for _ in range(num_patches_per_segment)
+                ]
+                seg_tensor[j] = torch.stack(patches)
+            else:
+                resized = F.interpolate(
+                    cropped.unsqueeze(0),
+                    size=(H_patch, W_patch),
+                    mode='bilinear',
+                    align_corners=False
+                )
+                seg_tensor[j] = resized
+
+        segments_batch.append(seg_tensor)
+
+    return torch.stack(segments_batch, dim=0)  # (N, ...)

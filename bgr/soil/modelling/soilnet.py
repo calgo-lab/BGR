@@ -1,17 +1,14 @@
-import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from bgr.soil.modelling.depth.depth_modules import LSTMDepthMarkerPredictor
+from bgr.soil.modelling.depth.depth_modules import LSTMDepthMarkerPredictorWithGuardrails
 from bgr.soil.modelling.geotemp_modules import GeoTemporalEncoder
 from bgr.soil.modelling.horizon.horizon_modules import HorizonEmbedder, HorizonLSTMEmbedder
 from bgr.soil.modelling.image_modules import PatchCNNEncoder, ResNetEncoder, ResNetPatchEncoder, MaskedResNetImageEncoder
 from bgr.soil.modelling.tabulars.tabular_modules import LSTMTabularPredictor, MLPTabularPredictor
 
-from bgr.soil.utils import unpad_image_using_mask, tensor_random_crop_reflect
+from bgr.soil.utils import unpad_image_using_mask, tensor_random_crop_reflect, extract_segments
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
 
 class SoilNet_LSTM(nn.Module):
     """End-to-end model predicting depth markers, tabular features and horizon labels.
@@ -85,7 +82,7 @@ class SoilNet_LSTM(nn.Module):
         self.geo_temp_encoder = GeoTemporalEncoder(self.geo_temp_input_dim, self.geo_temp_output_dim)
         
         # Depth marker predictor
-        self.depth_marker_predictor = LSTMDepthMarkerPredictor(self.image_encoder_output_dim + self.geo_temp_output_dim, self.depth_rnn_hidden_dim, self.max_seq_len, self.stop_token)
+        self.depth_marker_predictor = LSTMDepthMarkerPredictorWithGuardrails(self.image_encoder_output_dim + self.geo_temp_output_dim, self.depth_rnn_hidden_dim, self.max_seq_len, self.stop_token)
         
         # Tabular predictors (one for each tabular)
         self.tabular_predictors = nn.ModuleDict()
@@ -158,7 +155,7 @@ class SoilNet_LSTM(nn.Module):
         # Maybe modify the task models to accept pretrained image/segment/geotemp features as input?
         
         # Decide whether to use teacher forcing in this step based on the current epoch
-        if self.training and self.epoch < self.teacher_forcing_stop_epoch + 1:
+        if self.epoch < self.teacher_forcing_stop_epoch + 1:
             teacher_forcing_decision = self.teacher_forcing_decision(self.teacher_forcing_probs[self.epoch])
         else:
             teacher_forcing_decision = False
@@ -176,15 +173,14 @@ class SoilNet_LSTM(nn.Module):
         if teacher_forcing_decision and true_padded_depths is not None:
             processed_depth_markers = true_padded_depths # Use ground_truth
         else:
-            if self.check_depth_markers(depth_markers):
-                processed_depth_markers = depth_markers # Use predicted depths
-            else:
-                logger.warning("Depth markers are not monotonically increasing or not in range of [0, self.stop_token].")
-                processed_depth_markers = self.enforce_depth_markers(depth_markers)
+            processed_depth_markers = depth_markers # Use predicted depths if not training
         
         # Crop image to segments
-        segments = self.extract_segments(padded_image, image_mask, processed_depth_markers)
+        segments = extract_segments(padded_image, image_mask, processed_depth_markers,
+                                    self.segments_random_patches, self.patch_cnn_segment_size, self.num_patches_per_segment, self.segment_random_patch_size, 
+                                    self.stop_token, self.max_seq_len)
         
+
         if self.segments_random_patches:
             batch_size, num_segments, num_patches, C, H, W = segments.shape
         else:
@@ -240,72 +236,6 @@ class SoilNet_LSTM(nn.Module):
         
         return depth_markers, tabular_predictions, horizon_embeddings
     
-    def extract_segments(self, padded_images, image_masks, processed_depth_markers):
-        """
-        Extracts segments from a batch of padded images using depth markers.
-        Returns a tensor of shape:
-         - (N, max_seq_len, num_patches, C, H, W)  if segments_random_patches=True
-         - (N, max_seq_len, C, H_patch, W_patch)   otherwise
-        """
-        N, C, H, W = padded_images.shape
-        device = padded_images.device
-
-        # Precreate deterministic resize if needed
-        if not self.segments_random_patches:
-            H_patch = self.patch_cnn_segment_size
-            W_patch = 2 * self.patch_cnn_segment_size
-
-        segments_batch = []
-        for img, mask, depth_row in zip(padded_images, image_masks, processed_depth_markers):
-            # 1) Unpad
-            image = unpad_image_using_mask(img, mask)  # (C, H_img, W_img)
-
-            # 2) Truncate depths at stop_token
-            depths = depth_row.tolist()
-            if self.stop_token in depths:
-                idx = depths.index(self.stop_token) + 1
-                depths = depths[:idx]
-
-            # Convert to pixel bounds, prepend 0
-            pixel_bounds = [0] + [int(d * image.shape[1]) for d in depths]
-            num_segs = len(pixel_bounds) - 1
-
-            # 3) Allocate container
-            if self.segments_random_patches:
-                seg_tensor = torch.zeros(
-                    (self.max_seq_len, self.num_patches_per_segment, C, self.segment_random_patch_size, self.segment_random_patch_size),
-                    device=device
-                )
-            else:
-                seg_tensor = torch.zeros(
-                    (self.max_seq_len, C, H_patch, W_patch),
-                    device=device
-                )
-
-            # 4) Crop & process each segment
-            for j in range(num_segs):
-                uppper, lower = pixel_bounds[j], pixel_bounds[j + 1]
-                cropped = image[:, uppper:lower, :]  # (C, seg_h, W)
-
-                if self.segments_random_patches:
-                    patches = [
-                        tensor_random_crop_reflect(cropped, self.segment_random_patch_size)
-                        for _ in range(self.num_patches_per_segment)
-                    ]
-                    seg_tensor[j] = torch.stack(patches)
-                else:
-                    resized = F.interpolate(
-                        cropped.unsqueeze(0),
-                        size=(H_patch, W_patch),
-                        mode='bilinear',
-                        align_corners=False
-                    )
-                    seg_tensor[j] = resized
-
-            segments_batch.append(seg_tensor)
-
-        return torch.stack(segments_batch, dim=0)  # (N, ...)
-    
     def teacher_forcing_decision(self, probability):
         """
         Decides whether to use teacher forcing based on the given probability and training mode.
@@ -314,37 +244,6 @@ class SoilNet_LSTM(nn.Module):
             return torch.rand(1).item() < probability
         else:
             return False
-        
-    def check_depth_markers(self, depth_markers):
-        """
-        Check if the depth markers are valid (i.e., monotonically increasing and in range [0,self.stop_token]).
-        """
-        # Check if the depth markers are in the range [0, self.stop_token]
-        if torch.any(depth_markers < 0) or torch.any(depth_markers > self.stop_token):
-            return False
-
-        # Check if the depth markers are monotonically increasing
-        for i in range(depth_markers.shape[0]):
-            if not torch.all(torch.diff(depth_markers[i]) >= 0):
-                return False
-
-        return True
-    
-    def enforce_depth_markers(self, depth_markers):
-        """
-        Enforce depth markers to be monotonically increasing and in range [0,self.stop_token].
-        """        
-        
-        # Ensure depth markers are monotonically increasing
-        for i in range(depth_markers.shape[0]):
-            for j in range(1, depth_markers.shape[1]):
-                if depth_markers[i, j] < depth_markers[i, j - 1]:
-                    depth_markers[i, j] = depth_markers[i, j - 1] + 1e-2  # Small increment to ensure monotonicity
-
-        # Ensure depth markers are in the range [0, self.stop_token]
-        depth_markers = torch.clamp(depth_markers, 0, self.stop_token)
-        
-        return depth_markers
 
 
 # DEPRECATED:
@@ -369,7 +268,7 @@ class HorizonClassifier(nn.Module):
         #self.depth_marker_predictor = TransformerDepthMarkerPredictor(self.image_encoder.num_img_features + geo_temp_output_dim,
         #                                                              transformer_dim, num_transformer_heads, num_transformer_layers,
         #                                                              max_seq_len, stop_token)
-        self.depth_marker_predictor = LSTMDepthMarkerPredictor(self.image_encoder.num_img_features + geo_temp_output_dim, rnn_hidden_dim, max_seq_len, stop_token)
+        self.depth_marker_predictor = LSTMDepthMarkerPredictorWithGuardrails(self.image_encoder.num_img_features + geo_temp_output_dim, rnn_hidden_dim, max_seq_len, stop_token)
 
         self.segment_encoder = ResNetEncoder(resnet_version='18') # after predicting the depths, the original image is cropped and fed into another vision model
 
