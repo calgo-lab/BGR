@@ -100,7 +100,7 @@ class SimpleHorizonClassificationWithEmbeddingsGeotempsMLPTabMLP(Experiment):
         lr = self.training_args.learning_rate
         weight_decay = self.training_args.weight_decay
         optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, threshold=0.1, min_lr=lr*0.01, verbose=True)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, threshold=0.1, min_lr=lr*0.01)
         
         self.train_loss_history, self.val_loss_history = [], []
         self.train_acc_history, self.val_acc_history = [], []

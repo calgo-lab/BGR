@@ -5,8 +5,6 @@ Pillow==11.0.0
 scikit_image==0.24.0
 scikit_learn==1.5.2
 seaborn==0.13.2
-torch==2.1.0
-torchvision==0.16.0 
 tqdm==4.62.3
 transformers==4.25.1
 ydata_profiling==4.10.0
@@ -18,3 +16,7 @@ iterative-stratification==0.1.9
 wandb==0.19.8
 plotly==6.0.1
 tabulate==0.9.0
+
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch==2.1.0
+torchvision==0.16.0
