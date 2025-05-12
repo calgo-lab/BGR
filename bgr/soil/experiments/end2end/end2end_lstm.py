@@ -117,7 +117,7 @@ class End2EndLSTM(Experiment):
         lr = self.training_args.learning_rate
         weight_decay = self.training_args.weight_decay
         optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, threshold=0.1, min_lr=lr*0.01, verbose=True)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, threshold=0.1, min_lr=lr*0.01)
         
         # Training and evaluation loop
         self.histories = []
@@ -275,9 +275,9 @@ class End2EndLSTM(Experiment):
         )
         
         # Plot confusion matrix for horizon predictions
-        if len(self.hor_labels['train']) != 0:
+        if self.hor_labels['train']:
             self._plot_confusion_matrices(labels=self.hor_labels['train'], predictions=self.hor_predictions['train'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='train')
-        if len(self.hor_labels['val']) != 0:
+        if self.hor_labels['val']:
             self._plot_confusion_matrices(labels=self.hor_labels['val'], predictions=self.hor_predictions['val'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='val')
         self._plot_confusion_matrices(labels=self.hor_labels['test'], predictions=self.hor_predictions['test'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='test')
         

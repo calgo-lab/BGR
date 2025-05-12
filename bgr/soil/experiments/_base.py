@@ -46,7 +46,7 @@ class Experiment(ABC):
     def plot_losses(self, model_output_dir: str, wandb_image_logging: bool) -> None:
         pass
     
-    def _plot_confusion_matrices(self, labels, predictions, emb_dict, model_output_dir, wandb_image_logging=False, mode='test', cmap='Blues', annotate=True):
+    def _plot_confusion_matrices(self, labels, predictions, emb_dict, model_output_dir, wandb_image_logging=False, mode='test'):
         """
         Plots two confusion matrices - one for all the terminal symbols, one for the (aggregated) main symbols - as heatmaps and saves/logs them.
         
@@ -83,7 +83,7 @@ class Experiment(ABC):
             ax.set_aspect('equal')
             ax.set_xlabel('Predicted Labels')
             ax.set_ylabel('True Labels')
-            ax.set_title(f'Confusion Matrix - Accuracy: {accuracy:.4f}', fontsize=14)
+            ax.set_title(f'Confusion Matrix {mode} - Accuracy: {accuracy:.4f}', fontsize=14)
             
             # Save the figure
             os.makedirs(model_output_dir, exist_ok=True)

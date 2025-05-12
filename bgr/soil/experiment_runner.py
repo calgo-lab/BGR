@@ -46,6 +46,7 @@ class ExperimentRunner:
         self,
         training_args: TrainingArgs,
         model_file_path: str,
+        model_output_dir: str,
         timestamp: str,
         wandb_offline: bool = False
     ):
@@ -55,6 +56,7 @@ class ExperimentRunner:
         Args:
             training_args (TrainingArgs): The training arguments.
             model_file_path (str): The path to the pre-trained model file.
+            model_output_dir (str): The directory for experiment output.
             datetime (str): The timestamp for the experiment.
             wandb_offline (bool): If True, wandb will be initialized in offline mode.
 
@@ -66,14 +68,14 @@ class ExperimentRunner:
             experiment = get_experiment(self.experiment_type, training_args, self.target, self.dataprocessor)
             
             # Initialize wandb
-            self._init_wandb(wandb_offline, model_file_path, timestamp)
+            self._init_wandb(wandb_offline, model_output_dir, timestamp)
             
             # Load the model
             model = experiment.get_model()
             self._load_model(model_file_path, model)
             
             # Test the model
-            test_metrics = experiment.test(model, self.test_data, model_file_path, self.wandb_plot_logging)
+            test_metrics = experiment.test(model, self.test_data, model_output_dir, self.wandb_plot_logging)
             wandb.log(test_metrics)
             
             return test_metrics

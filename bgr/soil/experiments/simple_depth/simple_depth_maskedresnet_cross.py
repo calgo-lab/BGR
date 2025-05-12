@@ -6,7 +6,6 @@ import torch.nn as nn
 from torch.nn.utils import clip_grad_norm_ # modifies the tensors in-place (vs clip_grad_norm)
 from tqdm import tqdm
 import torchvision.transforms as transforms
-from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import wandb
 from typing import TYPE_CHECKING
@@ -17,16 +16,15 @@ if TYPE_CHECKING:
 
 from bgr.soil.data.horizon_tabular_data import HorizonDataProcessor
 from bgr.soil.experiments import Experiment
-from bgr.soil.modelling.depth.depth_models import SimpleDepthModelCrossAttention
+from bgr.soil.modelling.depth.depth_models import SimpleDepthModelMaskedResNetCrossAttention
 from bgr.soil.metrics import DepthMarkerLoss, depth_iou
-from bgr.soil.utils import pad_tensor
-from bgr.soil.data.datasets import ImageTabularDataset
+from bgr.soil.data.datasets import ImageTabularEnd2EndDataset
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class SimpleDepthsGeotempsCrossAttention(Experiment):
+class SimpleDepthsMaskedResNetCrossAttention(Experiment):
     def __init__(self, training_args: 'TrainingArgs', target: str, dataprocessor: HorizonDataProcessor):
         self.training_args = training_args
         self.target = target
@@ -40,7 +38,7 @@ class SimpleDepthsGeotempsCrossAttention(Experiment):
         ])
         
         # Retrieve the experiment hyperparameters
-        self.hyperparameters = SimpleDepthsGeotempsCrossAttention.get_experiment_hyperparameters()
+        self.hyperparameters = SimpleDepthsMaskedResNetCrossAttention.get_experiment_hyperparameters()
         self.hyperparameters.update(training_args.hyperparameters)
     
     def train_and_validate(self,
@@ -49,25 +47,21 @@ class SimpleDepthsGeotempsCrossAttention(Experiment):
         model_output_dir: str
     ) -> tuple[nn.Module, dict]:
         
-        train_dataset = ImageTabularDataset(
+        train_dataset = ImageTabularEnd2EndDataset(
             dataframe=train_df,
             normalize=self.image_normalization,
-            augment=[],
             img_path_column='file',
-            label_column=None, # no label column as input; access it instead via 'index' during training
             geotemp_columns=self.dataprocessor.geotemp_img_infos[:-1] # without 'file'
         )
-        train_loader = DataLoader(train_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
+        train_loader = train_dataset.to_dataloader(batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
-        val_dataset = ImageTabularDataset(
+        val_dataset = ImageTabularEnd2EndDataset(
             dataframe=val_df,
             normalize=self.image_normalization,
-            augment=[],
             img_path_column='file',
-            label_column=None, # no label column as input; access it instead via 'index' during training
             geotemp_columns=self.dataprocessor.geotemp_img_infos[:-1] # without 'file'
         )
-        val_loader = DataLoader(val_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
+        val_loader = val_dataset.to_dataloader(batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
         device = self.training_args.device
         
@@ -154,15 +148,13 @@ class SimpleDepthsGeotempsCrossAttention(Experiment):
         wandb_image_logging: bool
     ) -> dict:
         
-        test_dataset = ImageTabularDataset(
+        test_dataset = ImageTabularEnd2EndDataset(
             dataframe=test_df,
             normalize=self.image_normalization,
-            augment=[],
             img_path_column='file',
-            label_column=None, # no label column as input; access it instead via 'index' during training
             geotemp_columns=self.dataprocessor.geotemp_img_infos[:-1] # without 'file'
         )
-        test_loader = DataLoader(test_dataset, batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
+        test_loader = test_dataset.to_dataloader(batch_size=self.training_args.batch_size, shuffle=True, num_workers=self.training_args.num_workers, drop_last=True)
         
         device = self.training_args.device
         model.to(device)
@@ -190,17 +182,15 @@ class SimpleDepthsGeotempsCrossAttention(Experiment):
         return test_metrics
     
     def get_model(self) -> nn.Module:
-        return SimpleDepthModelCrossAttention(
+        return SimpleDepthModelMaskedResNetCrossAttention(
             geo_temp_input_dim=len(self.dataprocessor.geotemp_img_infos) - 2, # without index and img path
             geo_temp_output_dim=self.hyperparameters['geotemp_output_dim'],
             image_encoder_output_dim=self.hyperparameters['image_encoder_output_dim'],
             max_seq_len=self.hyperparameters['max_seq_len'],
-            stop_token=self.hyperparameters['stop_token'],
             decoder_hidden_dim=self.hyperparameters['decoder_hidden_dim'],
             decoder_num_heads=self.hyperparameters['decoder_num_heads'],
             decoder_num_layers=self.hyperparameters['decoder_num_layers'],
-            patch_size=self.hyperparameters['patch_size'],
-            predefined_random_patches=False # True = use ResNet, False = use custom CNN
+            stop_token=self.hyperparameters['stop_token']
         )
     
     def plot_losses(self, model_output_dir: str, wandb_image_logging: bool) -> None:
@@ -246,29 +236,16 @@ class SimpleDepthsGeotempsCrossAttention(Experiment):
         train_iou = 0.0
         train_loader_tqdm = tqdm(train_loader, desc="Training", leave=False)
         for batch in train_loader_tqdm:
-            images, geotemp_features = batch
-            images, geotemp_features = images.to(device), geotemp_features.to(device)
+            images, image_masks, geotemp_features, padded_true_depths, _, _ = batch
+            images, image_masks, geotemp_features, padded_true_depths = images.to(device), image_masks.to(device), geotemp_features.to(device), padded_true_depths.to(device)
 
             optimizer.zero_grad() # otherwise, PyTorch accumulates the gradients during backprop
 
-            # Get corresponding true depth markers and morphological features via index column in df (the first value in every row in geotemp)
-            # Note: the code accounts for duplicate indexes resulting after the augmentations in the ImageTabularDataset class (is there a better way than duplicating indexes during augmentation?)
-            true_depths = []
-            batch_indices = geotemp_features.cpu().numpy()[:, 0]
-            for idx in batch_indices:
-                true_depths.append(train_loader.dataset.dataframe.loc[train_loader.dataset.dataframe['index'] == idx, 'Untergrenze'].values[0])
-
-            # Turn list of depths into a padded tensor and also return mask of valid positions
-            padded_true_depths = pad_tensor(true_depths,
-                                            max_seq_len=model.depth_marker_predictor.max_seq_len,
-                                            stop_token=model.depth_marker_predictor.stop_token,
-                                            device=device)
-
             # Predict depth markers (as padded tensors)
-            pred_depths = model(images=images, geo_temp=geotemp_features[:, 1:]) # 'index' column not used in model
+            padded_pred_depths = model(padded_image=images, image_mask=image_masks, geo_temp=geotemp_features[:, 1:]) # 'index' column not used in model
 
             # Compute individual losses, then sum them together for backprop
-            train_loss = self.depth_loss(pred_depths, padded_true_depths)
+            train_loss = self.depth_loss(padded_pred_depths, padded_true_depths)
             train_loss.backward()
             clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
@@ -277,7 +254,7 @@ class SimpleDepthsGeotempsCrossAttention(Experiment):
             train_loss_total += train_loss.item()
 
             # Calculate IoU
-            train_iou += depth_iou(pred_depths, padded_true_depths, model.stop_token)
+            train_iou += depth_iou(padded_pred_depths, padded_true_depths, model.stop_token)
 
             train_loader_tqdm.set_postfix(loss=train_loss.item())
 
@@ -293,23 +270,11 @@ class SimpleDepthsGeotempsCrossAttention(Experiment):
         val_loader_tqdm = tqdm(val_loader, desc="Evaluating", leave=False)
         with torch.no_grad():
             for batch in val_loader_tqdm:
-                images, geotemp_features = batch
-                images, geotemp_features = images.to(device), geotemp_features.to(device)
-
-                # Get corresponding true depth markers via index column in df (see training step above)
-                true_depths = []
-                batch_indices = geotemp_features.cpu().numpy()[:, 0]
-                for idx in batch_indices:
-                    true_depths.append(val_loader.dataset.dataframe.loc[val_loader.dataset.dataframe['index'] == idx, 'Untergrenze'].values[0])
-
-                # Turn list of depths into a padded tensor and also return mask of valid positions
-                padded_true_depths = pad_tensor(true_depths,
-                                                max_seq_len=model.depth_marker_predictor.max_seq_len,
-                                                stop_token=model.depth_marker_predictor.stop_token,
-                                                device=device)
+                images, image_masks, geotemp_features, padded_true_depths, _, _ = batch
+                images, image_masks, geotemp_features, padded_true_depths = images.to(device), image_masks.to(device), geotemp_features.to(device), padded_true_depths.to(device)
 
                 # Predict depth markers (as padded tensors) and morphological features
-                pred_depths = model(images=images, geo_temp=geotemp_features[:, 1:]) # 'index' column not used in model
+                pred_depths = model(padded_image=images, image_mask=image_masks, geo_temp=geotemp_features[:, 1:]) # 'index' column not used in model
 
                 # Compute batch losses
                 val_loss = self.depth_loss(pred_depths, padded_true_depths)
@@ -336,5 +301,4 @@ class SimpleDepthsGeotempsCrossAttention(Experiment):
             'decoder_hidden_dim': 256,
             'decoder_num_heads': 8,
             'decoder_num_layers': 2,
-            'patch_size': 512
         }
