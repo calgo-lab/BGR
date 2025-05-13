@@ -220,7 +220,6 @@ class SoilNet_LSTM(nn.Module):
         else:
             # Use predicted tabular features
             processed_tabular_features = torch.cat([tabular_predictions[key] for key in self.tabular_predictors.keys()], dim=-1)
-            processed_tabular_features = true_tabular_features.view(batch_size, num_segments, -1)
         
         # Extra MLP for the tabular predictions before entering the horizon predictor
         true_tabular_features = self.segments_tabular_encoder(processed_tabular_features)
