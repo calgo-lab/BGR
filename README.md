@@ -67,7 +67,7 @@ Finally, horizon labels are predicted based on the multimodal concatenated featu
 
 ## Dataset
 
-For carrying out the experiments and training our models we disposed of an image-tabular dataset built and curated by our partner geological institute in Germany *(Reference anonymized)*.
+For carrying out the experiments and training our models we disposed of an image-tabular dataset built and curated by our partner geological institute *(Reference anonymized)*.
 
 **For the time being, the full dataset cannot be made publicly available.**
 
