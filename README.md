@@ -112,9 +112,14 @@ Where:
 # Results
 The results of our experiments are presented in the paper, for further details please refer to the paper.
 
-Here we provide a summary of the results for the SoilNet model:
+Here we provide a summary of the results for the SoilNet (SN) model with 4 different configurations. Metrics are computed on the test set and given in percents (%).  The full images for the depth module were encoded with the *MaskedResNet* image encoder. *PatchCNN* and *ResNet* refer to the segment encoders. *LSTM* refers to all three task-predictors (depth, tabulars, horizons). *Emb* and *CE* refer to the horizon loss, SN = SoilNet, Acc.agg. = Accuracy aggregated over main symbols. The main symbols represent the horizon symbols on a higher level of the hierarchy, demonstrating more geologically coherent predictions.
 
-**TODO** Add the updated results table here.
+| Model name              | IoU            | Acc.           | F1             | Prec.          | Rec.           | Acc.@5         | Prec.@5        | Rec.@5         | Acc.agg.       |
+| :---------------------- | :------------- | :------------- | :------------- | :------------- | :------------- | :------------- | :------------- | :------------- | :------------- |
+| SN_PatchCNN_LSTM_Emb    | 51.25          | 36.27          | 7.55           | **10.40** | **10.48** | 60.21          | 40.27          | 33.84          | **71.42** |
+| SN_ResNet_LSTM_Emb      | **51.47** | 35.40          | 6.58           | 8.51           | 9.48           | 59.65          | 33.75          | 33.08          | 68.70          |
+| SN_PatchCNN_LSTM_CE     | 49.52          | 43.99          | 7.20           | 9.03           | 8.26           | 72.02          | **50.33** | 30.33          | 68.61          |
+| SN_ResNet_LSTM_CE       | 49.91          | **45.70** | **7.99** | 9.22           | 8.62           | **76.25** | 49.85          | **35.03** | 69.88          |
 
 # Repository Structure
 The repository is structured as follows (*only relevant files displayed*):
