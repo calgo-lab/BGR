@@ -1,5 +1,5 @@
 # SoilNet: A Multimodal Multitask Model for Hierarchical Classification of Soil Horizons
-Submitted to the 39th Conference on Neural Information Processing Systems (NeruIPS 2025)
+Submitted to the 39th Conference on Neural Information Processing Systems (NeurIPS 2025)
 
 **Authors:** Anonymized Authors
 
@@ -71,17 +71,17 @@ For carrying out the experiments and training our models we disposed of an image
 
 **For the time being, the full dataset cannot be made publicly available.**
 
-However, the following figure demonstrates the data structure of the dataset we used for training and evaluation:
+The following figure demonstrates the data structure of the dataset we used for training and evaluation:
 
 ![Soilnet Data Structure](figures/Soilnet_Data_Structure.png)
 
-Additionally the dataset contained geotemporal metadata for each soil profile image. For further details on the dataset, please refer to the paper.
+Additionally, the dataset contained geotemporal metadata for each soil profile image. For further details on the dataset, please refer to the paper.
 
 ---
 
 ## Usage
 
-The repository's code can be used through running the `main.py` script. The script allows for training, and inference of the SoilNet model and submodules.
+The code can be used through running the `main.py` script, which allows for training (or running inference with) the SoilNet model and modules.
 
 To see all available command line arguments, run:
 ```bash
@@ -110,9 +110,8 @@ Where:
 - `<path_to_model_checkpoint>`: Path to the model checkpoint for the specfied experiment.
 
 # Results
-The results of our experiments are presented in the paper, for further details please refer to the paper.
 
-Here we provide a summary of the results for the SoilNet (SN) model with 4 different configurations. Metrics are computed on the test set and given in percents (%).  The full images for the depth module were encoded with the *MaskedResNet* image encoder. *PatchCNN* and *ResNet* refer to the segment encoders. *LSTM* refers to all three task-predictors (depth, tabulars, horizons). *Emb* and *CE* refer to the horizon loss, SN = SoilNet, Acc.agg. = Accuracy aggregated over main symbols. The main symbols represent the horizon symbols on a higher level of the hierarchy, demonstrating more geologically coherent predictions.
+Here, we provide a summary of the results for the SoilNet (SN) model with 4 different configurations. Metrics are computed on the test set and given in percents (%).  The full images for the depth module were encoded with the *MaskedResNet* image encoder. *PatchCNN* and *ResNet* refer to the segment encoders. *LSTM* refers to all three task-predictors (depth, tabulars, horizons). *Emb* and *CE* refer to the horizon loss, SN = SoilNet, Acc.agg. = Accuracy aggregated over main symbols. The main symbols represent the horizon symbols on a higher level of the hierarchy, demonstrating more geologically coherent predictions.
 
 | Model name              | IoU            | Acc.           | F1             | Prec.          | Rec.           | Acc.@5         | Prec.@5        | Rec.@5         | Acc.agg.       |
 | :---------------------- | :------------- | :------------- | :------------- | :------------- | :------------- | :------------- | :------------- | :------------- | :------------- |
