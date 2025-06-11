@@ -273,9 +273,9 @@ class End2EndLSTMResNetEmbed_NoGeoTemps(Experiment):
         )
         
         # Plot confusion matrix for horizon predictions
-        if self.hor_labels['train']:
+        if self.hor_labels['train'] is not None:
             self._plot_confusion_matrices(labels=self.hor_labels['train'], predictions=self.hor_predictions['train'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='train')
-        if self.hor_labels['val']:
+        if self.hor_labels['val'] is not None:
             self._plot_confusion_matrices(labels=self.hor_labels['val'], predictions=self.hor_predictions['val'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='val')
         self._plot_confusion_matrices(labels=self.hor_labels['test'], predictions=self.hor_predictions['test'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='test')
         
@@ -494,6 +494,7 @@ class End2EndLSTMResNetEmbed_NoGeoTemps(Experiment):
                 ## True horizons
                 true_horizon_embeddings = torch.stack([torch.tensor(self.dataprocessor.embeddings_dict['embedding'][lab.item()]) for lab in padded_true_horizon_indices.view(-1) if lab != -1]).to(device)
                 true_horizon_indices = padded_true_horizon_indices.view(-1)[padded_true_horizon_indices.view(-1) != -1]
+                
                 
                 ### Predictions for all (sub)tasks
                 padded_pred_depths, padded_pred_tabulars, padded_pred_horizon_embeddings = model(
