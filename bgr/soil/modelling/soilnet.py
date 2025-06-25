@@ -46,7 +46,7 @@ class SoilNet_LSTM(nn.Module):
         
         # Parameters for the model:
         teacher_forcing_stop_epoch : int = 5,
-        teacher_forcing_approach : str = 'linear_probabilistic', # 'linear_probabilistic' or 'binary'
+        teacher_forcing_approach : str = 'linear', # 'linear' or 'binary'
     ):
         super(SoilNet_LSTM, self).__init__()
         
@@ -110,7 +110,7 @@ class SoilNet_LSTM(nn.Module):
         
         self.epoch = 0
         self.teacher_forcing_probs = {
-            epoch: 1 - ((epoch - 1) / teacher_forcing_stop_epoch) if teacher_forcing_approach == 'linear_probabilistic' else 1.0
+            epoch: 1 - ((epoch - 1) / teacher_forcing_stop_epoch) if teacher_forcing_approach == 'linear' else 1.0
             for epoch in range(1, teacher_forcing_stop_epoch + 1)
         }
         self.teacher_forcing_stop_epoch = teacher_forcing_stop_epoch
@@ -279,7 +279,7 @@ class SoilNet_NoGeoTemp_LSTM(nn.Module):
         
         # Parameters for the model:
         teacher_forcing_stop_epoch : int = 5,
-        teacher_forcing_approach : str = 'linear_probabilistic', # 'linear_probabilistic' or 'binary'
+        teacher_forcing_approach : str = 'linear', # 'linear' or 'binary'
     ):
         super(SoilNet_NoGeoTemp_LSTM, self).__init__()
         
@@ -338,7 +338,7 @@ class SoilNet_NoGeoTemp_LSTM(nn.Module):
         
         self.epoch = 0
         self.teacher_forcing_probs = {
-            epoch: 1 - ((epoch - 1) / teacher_forcing_stop_epoch) if teacher_forcing_approach == 'linear_probabilistic' else 1.0
+            epoch: 1 - ((epoch - 1) / teacher_forcing_stop_epoch) if teacher_forcing_approach == 'linear' else 1.0
             for epoch in range(1, teacher_forcing_stop_epoch + 1)
         }
         self.teacher_forcing_stop_epoch = teacher_forcing_stop_epoch
