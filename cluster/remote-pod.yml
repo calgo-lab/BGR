@@ -35,8 +35,8 @@ spec:
           - name: dshm
             mountPath: /dev/shm
       nodeSelector:
-        kubernetes.io/hostname: cl-worker24
-        gpu: a100
+        # kubernetes.io/hostname: cl-worker24
+        gpu: h200
       volumes:
         - name: bgr-project-pvc
           persistentVolumeClaim:
