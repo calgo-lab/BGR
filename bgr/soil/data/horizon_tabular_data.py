@@ -131,14 +131,14 @@ class HorizonDataProcessor:
         
         return df
     
-    def multi_label_stratified_shuffle_split(self, df: pd.DataFrame, n_splits : int = 1, train_val_test_frac: list[float] = [0.7, 0.15, 0.15], random_state: int = None) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    def multi_label_stratified_shuffle_split(self, df: pd.DataFrame, n_splits : int = 1, train_val_test_frac: list[float] = [0.6, 0.2, 0.2], random_state: int = None) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
         Splits the dataset according to the distribution of classes in categorical tabular features.
         
         Args:
             df (pd.DataFrame): DataFrame containing the data to be split.
             n_splits (int): Number of re-shuffling & splitting iterations. Default is 1.
-            train_val_test_frac (list[float]): Split ratios. Default is [0.7, 0.15, 0.15].
+            train_val_test_frac (list[float]): Split ratios. Default is [0.6, 0.2, 0.2].
             random_state (int): Random seed. Default is None.
         
         Returns:
@@ -168,6 +168,56 @@ class HorizonDataProcessor:
             val_df, test_df = val_and_test_df.iloc[val_idx], val_and_test_df.iloc[test_idx]
         
         return train_df, val_df, test_df
+    
+    def multi_label_stratified_shuffle_split_calibrated(self, df: pd.DataFrame, n_splits : int = 1, 
+                                                        train_val_calib_test_frac: list[float] = [0.6, 0.2, 0.1, 0.1], 
+                                                        random_state: int = None) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """
+        Splits the dataset according to the distribution of classes in categorical tabular features.
+        
+        Args:
+            df (pd.DataFrame): DataFrame containing the data to be split.
+            n_splits (int): Number of re-shuffling & splitting iterations. Default is 1.
+            train_val_calib_test_frac (list[float]): Split ratios. Default is [0.6, 0.2, 0.1, 0.1].
+            random_state (int): Random seed. Default is None.
+        
+        Returns:
+            Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: Training, validation, calibration and test dataframes.
+        """
+        
+        # Split dataset according to distribution of classes in categorical tabular features (including horizon labels)
+        df_stratified_split_targets = df[self.stratified_split_targets]
+        
+        # First split training apart from validation-calibration-test
+        ml_split_1 = MultilabelStratifiedShuffleSplit(
+            n_splits=n_splits,
+            test_size=sum(train_val_calib_test_frac[1:]),
+            random_state=random_state
+        )
+        for train_idx, val_calib_test_idx in ml_split_1.split(df, df_stratified_split_targets):
+            train_df, val_calib_test_df = df.iloc[train_idx], df.iloc[val_calib_test_idx]
+            val_calib_test_targets = df_stratified_split_targets.iloc[val_calib_test_idx]
+        
+        # Second split validation apart from calibration-test
+        ml_split_2 = MultilabelStratifiedShuffleSplit(
+            n_splits=n_splits,
+            test_size=sum(train_val_calib_test_frac[2:]) / sum(train_val_calib_test_frac[1:]),
+            random_state=random_state
+        )
+        for val_idx, calib_test_idx in ml_split_2.split(val_calib_test_df, val_calib_test_targets):
+            val_df, calib_test_df = val_calib_test_df.iloc[val_idx], val_calib_test_df.iloc[calib_test_idx]
+            calib_test_targets = df_stratified_split_targets.iloc[calib_test_idx]
+
+        # Third split in calibration and test set
+        ml_split_3 = MultilabelStratifiedShuffleSplit(
+            n_splits=n_splits,
+            test_size=train_val_calib_test_frac[3] / sum(train_val_calib_test_frac[2:]),
+            random_state=random_state
+        )
+        for calib_idx, test_idx in ml_split_3.split(calib_test_df, calib_test_targets):
+            calib_df, test_df = calib_test_df.iloc[calib_idx], calib_test_df.iloc[test_idx]
+        
+        return train_df, val_df, calib_df, test_df
 
     def _load_and_preprocess_main_csv(self) -> pd.DataFrame:
         """
