@@ -7,7 +7,7 @@ from bgr.soil.modelling.horizon.horizon_modules import HorizonEmbedder, HorizonL
 from bgr.soil.modelling.image_modules import PatchCNNEncoder, ResNetEncoder, ResNetPatchEncoder, MaskedResNetImageEncoder
 from bgr.soil.modelling.tabulars.tabular_modules import LSTMTabularPredictor, MLPTabularPredictor
 
-from bgr.soil.utils import unpad_image_using_mask, tensor_random_crop_reflect, extract_segments
+from bgr.soil.utils import extract_segments, generate_segment_masks
 
 
 class SoilNet_LSTM(nn.Module):
@@ -423,6 +423,223 @@ class SoilNet_NoGeoTemp_LSTM(nn.Module):
             else:
                 segment = segments[:, i, :, :, :]
                 segment_features = self.segment_encoder(segment)
+            segment_features_list.append(segment_features)
+        segment_features = torch.stack(segment_features_list, dim=1)
+        
+        # Pass through LSTM predictors
+        tabular_predictions = {}
+        for key, predictor in self.tabular_predictors.items():
+            tabular_predictions[key] = predictor(segment_features)
+        
+        ### TASK 3: Compute horizon embedding from the final concatenated vector
+        if teacher_forcing_decision and true_tabular_features is not None:
+            # Use ground truth tabular features if available
+            processed_tabular_features = true_tabular_features.view(batch_size, num_segments, -1)
+        else:
+            # Use predicted tabular features
+            processed_tabular_features = torch.cat([tabular_predictions[key] for key in self.tabular_predictors.keys()], dim=-1)
+        
+        # Extra MLP for the tabular predictions before entering the horizon predictor
+        true_tabular_features = self.segments_tabular_encoder(processed_tabular_features)
+        
+        # Concatenate segment features with tabular features
+        segment_tabular_features = torch.cat([segment_features, true_tabular_features], dim=-1)
+        
+        # Flatten to match the expected input dimensions
+        segment_tabular_features = segment_tabular_features.view(batch_size * num_segments, -1)
+        
+        # Compute the horizon embeddings
+        # Embeddings are returned all at once (for each sample)   
+        horizon_embeddings = self.horizon_embedder(segment_tabular_features, num_segments)
+        
+        return depth_markers, tabular_predictions, horizon_embeddings
+    
+    def teacher_forcing_decision(self, probability):
+        """
+        Decides whether to use teacher forcing based on the given probability and training mode.
+        """
+        if self.training:
+            return torch.rand(1).item() < probability
+        else:
+            return False
+        
+class SoilNet_MaskedSegment(nn.Module):
+    """End-to-end model predicting depth markers, tabular features and horizon labels. Without GeoTemp features.
+    All task models are LSTM-based.
+    """
+    def __init__(
+        self,        
+        # Parameters for image encoder and depth predictor:
+        image_encoder_output_dim : int = 512,  # may be different from the segment encoder output dim below
+        max_seq_len : int = 10, 
+        stop_token : float = 1.0,
+        depth_rnn_hidden_dim : int = 256, # params for LSTMDepthPredictor
+        #depth_num_lstm_layers : int = 2, # should we allow the user to select this?
+        img_patch_size : int = 512,  # may be different from segment patch sizes below
+        num_patches_per_segment : int = 8, # number of patches per segment
+        segment_random_patch_size : int = 224, # size of the random patches
+        segments_mask_fading_strength: float = 0.1, # strength of the fading effect for the masked segments
+        segments_mask_upper_boundary_weight : float = 1.5, # weight for the mask 
+
+        # Parameters for tabular predictors:
+        tabular_output_dim_dict : dict[str, int] = {}, # name_tabular: output_dim
+        segment_encoder_output_dim : int = 512,
+        patch_cnn_segment_size : int = 512,
+        tab_rnn_hidden_dim : int = 1024,
+        tab_num_lstm_layers : int = 2,
+        
+        # Parameters for horizon predictor:
+        #segments_tabular_input_dim, # not necessary, derived from tabular_output_dim_dict
+        segments_tabular_output_dim : int = 64, # for the final MLP before entering the horizon predictor
+        #hor_rnn_hidden_dim : int = 256, # should we allow the user to select this?
+        #hor_num_lstm_layers : int = 2, # should we allow the user to select this?
+        embedding_dim : int = 61,
+        #embed_horizons_linearly : bool = True # will always be true, since only LSTMs are used here
+        
+        # Parameters for the model:
+        teacher_forcing_stop_epoch : int = 5,
+        teacher_forcing_approach : str = 'linear', # 'linear' or 'binary'
+    ):
+        super(SoilNet_MaskedSegment, self).__init__()
+        
+        ### Set attributes ###
+        self.image_encoder_output_dim = image_encoder_output_dim
+        self.max_seq_len = max_seq_len
+        self.stop_token = stop_token
+        self.depth_rnn_hidden_dim = depth_rnn_hidden_dim
+        self.img_patch_size = img_patch_size
+        self.num_patches_per_segment = num_patches_per_segment
+        self.segment_random_patch_size = segment_random_patch_size
+        self.segments_mask_fading_strength = segments_mask_fading_strength
+        self.segments_mask_upper_boundary_weight = segments_mask_upper_boundary_weight
+        self.tabular_output_dim_dict = tabular_output_dim_dict
+        self.segment_encoder_output_dim = segment_encoder_output_dim
+        self.patch_cnn_segment_size = patch_cnn_segment_size
+        self.tab_rnn_hidden_dim = tab_rnn_hidden_dim
+        self.tab_num_lstm_layers = tab_num_lstm_layers
+        self.segments_tabular_output_dim = segments_tabular_output_dim
+        self.embedding_dim = embedding_dim
+        
+        # Image encoder
+        self.image_encoder = MaskedResNetImageEncoder(output_embedding_dim=self.image_encoder_output_dim, resnet_version='18')
+        
+        # Segment encoder
+        self.segment_encoder = ResNetPatchEncoder(output_dim=self.segment_encoder_output_dim, resnet_version='18') # TODO
+        
+        # Depth marker predictor
+        self.depth_marker_predictor = LSTMDepthMarkerPredictorWithGuardrails(self.image_encoder_output_dim, self.depth_rnn_hidden_dim, self.max_seq_len, self.stop_token)
+        
+        # Tabular predictors (one for each tabular)
+        self.tabular_predictors = nn.ModuleDict()
+        segments_tabular_input_dim = 0 # sum of all tabular output dims (needed for the extra MLP layer below)
+        for key, output_dim in self.tabular_output_dim_dict.items():                        
+            self.tabular_predictors[key] = LSTMTabularPredictor(
+                input_dim = self.segment_encoder_output_dim, # all get the same input dimension
+                output_dim = output_dim, # each has a different output dim, depending on how many classes it predicts
+                hidden_dim = self.tab_rnn_hidden_dim,
+                num_lstm_layers = self.tab_num_lstm_layers
+            )
+            segments_tabular_input_dim += output_dim
+            
+        # Extra linear layer for the tabular predictions
+        self.segments_tabular_encoder = nn.Sequential(
+            nn.Linear(segments_tabular_input_dim, self.segments_tabular_output_dim),
+            nn.ReLU()
+        )    
+        
+        # Horizon predictor
+        # Choose between the MLP (later with cross entropy loss) and LSTM horizon embedder
+        # Takes the fully concatenated segment_geotemp_tabular vector as input
+        self.horizon_embedder = HorizonLSTMEmbedder(input_dim = self.segment_encoder_output_dim + self.segments_tabular_output_dim, 
+                                                    output_dim = self.embedding_dim, hidden_dim = 256)
+        
+        self.epoch = 0
+        self.teacher_forcing_probs = {
+            epoch: 1 - ((epoch - 1) / teacher_forcing_stop_epoch) if teacher_forcing_approach == 'linear' else 1.0
+            for epoch in range(1, teacher_forcing_stop_epoch + 1)
+        }
+        self.teacher_forcing_stop_epoch = teacher_forcing_stop_epoch
+    
+    def train(self, mode = True):
+        # Increase epoch counter if model was set to training mode
+        if mode:
+            self.epoch += 1
+        return super().train(mode)
+    
+    def forward(self, padded_image, image_mask, true_padded_depths=None, true_tabular_features=None, use_trues_during_inference=False):
+        """
+        Forward pass of the model.
+
+        Parameters
+        ----------
+        padded_image : torch.Tensor
+            The padded image tensor, not resized so it can be used for the segment patches.
+        image_mask : torch.Tensor
+            The mask tensor for the images to indicate valid pixels.
+        true_padded_depths : torch.Tensor, optional
+            The true padded depths tensor. If provided, the model will use these for training.
+        true_tabular_features : torch.Tensor, optional
+            The true tabular features tensor. If provided, the model will use these for training.
+        use_trues_during_inference : bool, optional
+            If True, the model will use the true padded depths and tabular features during inference. (For human-assisted inference)
+
+        Returns
+        -------
+        Tuple[torch.Tensor, nn.ModuleDict[str, torch.Tensor], torch.Tensor]
+            A tuple containing:
+            - depth_markers: The predicted depth markers tensor.
+            - tabular_predictions: A dictionary of predicted tabular features tensors.
+            - horizon_embeddings: The predicted horizon embeddings tensor.
+        """
+        # TODO: Can we rewrite this method in the form:
+        # depth_markers = SimpleDepthModel(...).forward(image, geo_temp_features)
+        # tabular_predictions = SimpleTabularModel(...).forward(segments, geo_temp_features)
+        # horizon_embedding = SimpleHorizonClassifierWithEmbeddingsGeotempsMLPTabMLP(...).forward(segments, segments_tabular_features, geo_temp_features)
+        # Right now, every task model extracts again image/segment features and geotemp features. 
+        # Here we only need to extract them once and reuse them in subsequent tasks.
+        # Maybe modify the task models to accept pretrained image/segment/geotemp features as input?
+        
+        # Decide whether to use teacher forcing in this step based on the current epoch (in inference, use trues when specified)
+        if not self.training and use_trues_during_inference:
+            teacher_forcing_decision = True
+        elif self.epoch < self.teacher_forcing_stop_epoch + 1:
+            teacher_forcing_decision = self.teacher_forcing_decision(self.teacher_forcing_probs[self.epoch])
+        else:
+            teacher_forcing_decision = False
+        
+        # Extract image + geotemp features, then concatenate them
+        image_features = self.image_encoder(padded_image, image_mask)
+
+        ### TASK 1: Predict depth markers based on concatenated vector
+        depth_markers = self.depth_marker_predictor(image_features)
+        
+        ### TASK 2: Predict tabular features for each segment
+        # Use ground truth if teacher forcing decision is true
+        if teacher_forcing_decision and true_padded_depths is not None:
+            processed_depth_markers = true_padded_depths # Use ground_truth
+        else:
+            processed_depth_markers = depth_markers # Use predicted depths if not training
+        
+        # pass (H, W) from the padded_image for mask dimensions
+        # pass the full image_mask (batch_size, 1, H, W)
+        segment_masks = generate_segment_masks(
+            padded_image.shape[-2:],           # (H, W) of the image
+            processed_depth_markers,           # (batch_size, num_segments, 2) or (batch_size, num_segments)
+            image_mask,                        # (batch_size, 1, H, W)
+            stop_token=self.stop_token,
+            max_seq_len=self.max_seq_len,
+            fading_strength=self.segments_mask_fading_strength,
+            upper_boundary_weight_factor=self.segments_mask_upper_boundary_weight
+        ) # segment_masks shape: (batch_size, num_segments, H, W)
+        
+        batch_size, num_segments, H, W = segment_masks.shape
+        
+        # Encode each segment individually
+        segment_features_list = []
+        for i in range(num_segments):
+            current_segment_mask = segment_masks[:, i, :, :] # Shape: (batch_size, H, W)
+            segment_features = self.segment_encoder(padded_image, segment_masks) # TODO
+            t
             segment_features_list.append(segment_features)
         segment_features = torch.stack(segment_features_list, dim=1)
         

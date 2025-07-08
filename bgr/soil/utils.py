@@ -340,3 +340,97 @@ def extract_segments(padded_images, image_masks, processed_depth_markers,
         segments_batch.append(seg_tensor)
 
     return torch.stack(segments_batch, dim=0)  # (N, ...)
+
+def generate_segment_masks(
+    image_hw: tuple, # (H, W) of the padded_image
+    processed_depth_markers: torch.Tensor, # (batch_size, max_seq_len)
+    image_mask: torch.Tensor, # (batch_size, 1, H, W)
+    stop_token: float = 1.0, # The stop token value
+    max_seq_len: int = 8, # The maximum number of segments
+    fading_strength: float = 0.1, # Controls the width of the fading region
+    upper_boundary_weight_factor: float = 1.5 # Factor to emphasize upper boundary
+) -> torch.Tensor:
+    """
+    Generates fading masks for each segment based on predicted lower depth markers,
+    handling stop tokens and inferring upper boundaries.
+    """
+    batch_size, _ = processed_depth_markers.shape # _ is max_seq_len
+    H, W = image_hw
+    device = processed_depth_markers.device
+
+    all_segment_masks = torch.zeros(batch_size, max_seq_len, H, W, device=device)
+
+    # Create a row index tensor for broadcasting
+    rows = torch.arange(H, device=device).float().view(1, H, 1) # Shape (1, H, 1)
+
+    for b in range(batch_size):
+        # Extract depths for current image, convert to list to handle stop_token
+        current_depths_list = processed_depth_markers[b].tolist()
+        
+        # Handle stop_token: truncate to actual number of segments
+        actual_depths = []
+        for d in current_depths_list:
+            if d == stop_token: # Check if the token is the actual integer value
+                break
+            actual_depths.append(d)
+
+        # Convert to pixel bounds. Prepend 0 for the first segment's upper bound.
+        # These depths are already pixel coordinates, not normalized fractions.
+        # If they ARE normalized fractions, then convert: int(d * H)
+        # Assuming for now they are direct pixel row numbers
+        # If your depth_marker_predictor outputs normalized values, then `d * H` is needed here.
+        # Given your `extract_segments` uses `d * image.shape[1]` (which is width),
+        # this suggests depths are 0-1 and applied to height. It should be `d * H`.
+        # Let's assume `processed_depth_markers` are already pixel values for `H`.
+        
+        # Inferred pixel bounds (upper, lower) for actual segments
+        segment_pixel_bounds = []
+        current_upper_bound = 0 # First segment starts at row 0
+        for lower_bound in actual_depths:
+            # Ensure lower_bound is not less than upper_bound (can happen if model predicts badly)
+            lower_bound_clamped = max(current_upper_bound + 1, int(lower_bound)) # Ensure minimal height
+            segment_pixel_bounds.append((current_upper_bound, lower_bound_clamped))
+            current_upper_bound = lower_bound_clamped # Next segment starts where this one ended
+
+        # Process each actual segment
+        for j, (upper_b, lower_b) in enumerate(segment_pixel_bounds):
+            if j >= max_seq_len: # Safety break if somehow more segments than max_seq_len (shouldn't happen with stop_token)
+                break
+            
+            # Convert to float for calculations
+            u_b = float(upper_b)
+            l_b = float(lower_b)
+
+            seg_h = l_b - u_b
+            if seg_h <= 0: # Handle empty or invalid segments
+                continue
+
+            fade_h = fading_strength * seg_h
+
+            # Linear fading logic (as before, but per-sample)
+            upper_fade_ramp = torch.clamp((rows[0, :, 0] - u_b + fade_h) / fade_h, 0, 1)
+            lower_fade_ramp = torch.clamp((l_b + fade_h - rows[0, :, 0]) / fade_h, 0, 1)
+            combined_ramp = torch.min(upper_fade_ramp, lower_fade_ramp)
+            
+            # Base binary mask for current segment
+            segment_base_mask_1d = ((rows[0, :, 0] >= u_b) & (rows[0, :, 0] <= l_b)).float()
+
+            # Upper boundary weighting
+            upper_weight_multiplier = torch.ones_like(rows[0,:,0])
+            if fade_h > 0:
+                decay_slope = (1.0 - upper_boundary_weight_factor) / fade_h
+                current_multiplier = upper_boundary_weight_factor + decay_slope * (rows[0, :, 0] - u_b)
+                current_multiplier = torch.clamp(current_multiplier, 1.0, upper_boundary_weight_factor)
+                mask_for_multiplier = (rows[0, :, 0] >= u_b) & (rows[0, :, 0] <= u_b + fade_h) & (rows[0, :, 0] <= l_b)
+                upper_weight_multiplier[mask_for_multiplier] = current_multiplier[mask_for_multiplier]
+
+            # Apply fading and weighting to the base mask
+            mask_for_segment_1d = segment_base_mask_1d * combined_ramp * upper_weight_multiplier
+            
+            # Broadcast to 2D and store
+            all_segment_masks[b, j, :, :] = mask_for_segment_1d.view(H, 1).expand(-1, W)
+            
+    # Apply the global image_mask: (batch_size, num_segments, H, W) * (batch_size, 1, H, W)
+    all_segment_masks = all_segment_masks * image_mask 
+
+    return all_segment_masks
