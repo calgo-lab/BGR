@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from bgr.soil.utils import extract_segments
 
 
-def model_inference_mcd_depths(data_loader, model, device, num_inferences=100):
+def soilnet_inference_mcd_depths(data_loader, model, device, num_inferences=100):
     """Run Monte Carlo Dropout inference on the depths"""
 
     model.to(device)
@@ -44,7 +44,7 @@ def model_inference_mcd_depths(data_loader, model, device, num_inferences=100):
     return all_pred_mean_depths, all_pred_std_depths
 
 
-def model_inference(data_loader, model, device):
+def soilnet_inference(data_loader, model, device):
     """Run inference on Task 1 and 3"""
     
     model.to(device)
@@ -203,3 +203,25 @@ def plot_calibration_curve(y_probs, y_true, n_bins=10):
     plt.show()
 
     return ece
+
+
+def split_pad(counts_until_stop, pred_depths_test_oracle_rand, max_seq_len):
+    """Split and pad corrected predictions"""
+    
+    # Split corrected trimmed prediction into sublists according to counts_until_stop
+    split_pred_depths_test_oracle_resid = []
+    start = 0
+    for count in counts_until_stop:
+        split_pred_depths_test_oracle_resid.append(pred_depths_test_oracle_rand[start:start + count].tolist())
+        start += count
+        
+    # Pad each sublist with 1.0 until max_seq_len
+    padded_pred_depths_test_oracle_resid = []
+    for sublist in split_pred_depths_test_oracle_resid:
+        if len(sublist) < max_seq_len:
+            padded = sublist + [1.0] * (max_seq_len - len(sublist))
+        else:
+            padded = sublist[:max_seq_len]
+        padded_pred_depths_test_oracle_resid.append(padded)
+        
+    return padded_pred_depths_test_oracle_resid
