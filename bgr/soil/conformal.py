@@ -95,13 +95,19 @@ def soilnet_inference(data_loader, model, device):
                                         model.segments_random_patches, model.patch_cnn_segment_size, 
                                         model.num_patches_per_segment, model.segment_random_patch_size, 
                                         model.stop_token, model.max_seq_len)
-            batch_size, num_segments, num_patches, C, H, W = segments.shape
+            if model.segments_random_patches:
+                batch_size, num_segments, num_patches, C, H, W = segments.shape
+            else:
+                batch_size, num_segments, C, H, W = segments.shape
             # Encode each segment individually
             segment_features_list = []
             for i in range(num_segments):
-                segment_patches = segments[:, i, :, :, :, :] # One additional dimension for the random patches
-                segment_features = model.segment_encoder(segment_patches)
-                
+                if model.segments_random_patches:
+                    segment_patches = segments[:, i, :, :, :, :] # One additional dimension for the random patches
+                    segment_features = model.segment_encoder(segment_patches)
+                else:
+                    segment = segments[:, i, :, :, :]
+                    segment_features = model.segment_encoder(segment)                   
                 segment_features_list.append(segment_features)
             segment_features = torch.stack(segment_features_list, dim=1)
             
@@ -164,9 +170,34 @@ def trim_concat(true_depths, pred_depths, segment_geotemp_list):
     return trimmed_true_depths_stacked, trimmed_pred_depths_stacked, segment_geotemp_concat
 
 
-def plot_calibration_curve(y_probs, y_true, n_bins=10):
-    """Compute Expected Calibration Error and draw calibration curve"""
+def evaluate_coverage(prediction_sets, y_true, conf_levels):
+    """Checks for different alpha levels whether the true label is covered by the prediction sets.
 
+    Args:
+        prediction_sets (dict): Dictionary of boolean prediction sets for different conf. levels
+        y_true (array): True class indices
+        conf_levels (list): Confidence levels
+
+    Returns:
+        list: Coverage rates for all conf. levels
+    """
+    
+    empirical_coverages = []
+    for cl in conf_levels:
+        coverages = []
+        # Check if the true label is in the predicted set
+        for preds, y in zip(prediction_sets[cl], y_true):
+            if preds[y]: coverages.append(1)
+            else: coverages.append(0)
+
+        empirical_coverages.append(np.mean(coverages))
+    
+    return empirical_coverages
+
+
+def compute_calibration_curve_nonconformal(y_probs, y_true, n_bins=10):
+    """Computes the calibration curve (confidences and accuraccies) for a nonconformal model, along with ECE and MAE."""
+    
     y_probs = np.array(y_probs)
     y_true = np.array(y_true)
     confidences = np.max(y_probs, axis=1)
@@ -175,7 +206,7 @@ def plot_calibration_curve(y_probs, y_true, n_bins=10):
 
     bin_boundaries = np.linspace(0, 1, n_bins + 1)
     accs, confs = [], []
-    ece = 0.0
+    mae, ece = 0.0, 0.0
 
     for i in range(n_bins):
         bin_lower = bin_boundaries[i]
@@ -188,21 +219,14 @@ def plot_calibration_curve(y_probs, y_true, n_bins=10):
             bin_accuracy = np.mean(accuracies[mask])
             bin_confidence = np.mean(confidences[mask])
             bin_size = np.sum(mask) / len(y_true)
+            
+            mae += np.abs(bin_confidence - bin_accuracy) / n_bins
             ece += np.abs(bin_confidence - bin_accuracy) * bin_size
         else:
             accs.append(0.0)
             confs.append(0.0)
 
-    plt.plot([0, 1], [0, 1], linestyle='--', color='gray')
-    plt.plot(confs, accs, marker='o')
-    plt.xlabel('Confidence')
-    plt.ylabel('Accuracy')
-    #plt.title('Calibration Curve')
-    plt.legend(['Perfect calibration', 'Softmax bins'])
-    plt.grid(True)
-    plt.show()
-
-    return ece
+    return mae, ece, accs, confs
 
 
 def split_pad(counts_until_stop, pred_depths_test_oracle_rand, max_seq_len):
@@ -225,3 +249,18 @@ def split_pad(counts_until_stop, pred_depths_test_oracle_rand, max_seq_len):
         padded_pred_depths_test_oracle_resid.append(padded)
         
     return padded_pred_depths_test_oracle_resid
+
+
+def cumulate_set_sizes(predicted_lists):
+    """Computes the cumulative histogram of the sizes in a list of predicted conformal lists.
+
+    Args:
+        predicted_lists (list): list of predicted lists of different sizes (may be strings or class indexes)
+    """
+
+    set_sizes = [len(pl) for pl in predicted_lists]
+    counts, bin_edges = np.histogram(set_sizes, bins=range(0, max(set_sizes) + 1))
+    cumulative_counts = np.cumsum(counts)
+    normalized_cumulative_counts = cumulative_counts / cumulative_counts[-1]
+
+    return normalized_cumulative_counts, bin_edges
