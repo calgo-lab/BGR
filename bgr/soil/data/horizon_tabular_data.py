@@ -44,6 +44,7 @@ class HorizonDataProcessor:
             'BZE_Moor', 'Hauptbodentyp', 'GrundwaStufe', 'Neigung', 'Exposition', 'Woelbung', 
             'Reliefformtyp', 'LageImRelief'
         ]
+        self.category_maps = {} # to store mappings for categorical columns, when encoding them
         self.keep_columns = [
             'Point', 'Obergrenze', 'Untergrenze', self.target, 
             'Bodenart', 'Bodenfarbe', 'Steine', 'Karbonat', 'Humusgehaltsklasse', 'Durchwurzelung', 
@@ -455,7 +456,8 @@ class HorizonDataProcessor:
             pd.DataFrame: DataFrame with encoded and scaled features.
         """
         for categ in self.categ_features:
-            HorizonDataProcessor._encode_categorical_columns(df, categ)
+            # Encode AND Store the mapping for later decoding
+            self.category_maps[categ] = HorizonDataProcessor._encode_categorical_columns(df, categ)
         df = df.fillna(df.median(numeric_only=True))
         df = df.astype({'Bodenart': int, 'Bodenfarbe': int, 'Humusgehaltsklasse': int})
         
@@ -537,9 +539,16 @@ class HorizonDataProcessor:
         Args:
             df (pd.DataFrame): DataFrame containing the data.
             col_name (str): Name of the column to be encoded.
+            
+        Returns:
+            list: List of categories for the encoded column.
         """
         counts = df[col_name].value_counts()
-        df[col_name] = df[col_name].replace(counts.index, range(len(counts)))
+        categories = counts.index.tolist()
+        df[col_name] = df[col_name].replace(categories, list(range(len(categories))))
+        
+        # Return the categories for storing in category_maps
+        return categories
     
     @staticmethod
     def _normalize_df_list(lst, max_boundary=100.0):
