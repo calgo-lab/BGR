@@ -1,7 +1,6 @@
 # SoilNet: A Multimodal Multitask Model for Hierarchical Classification of Soil Horizons
-Submitted to the 39th Conference on Neural Information Processing Systems (NeurIPS 2025)
 
-**Authors:** Anonymized Authors
+**Authors:** Teodor Chiaburu, Vipin Singh, Frank Hausser, Felix Biessmann
 
 ---
 
@@ -15,6 +14,7 @@ Submitted to the 39th Conference on Neural Information Processing Systems (NeurI
     * [Training](#training)
     * [Evaluation](#evaluation)
 * [Results](#results)
+* [Conformalization](#conformalization)
 * [Repository Structure](#repository-structure)
 
 ---
@@ -46,7 +46,7 @@ Finally, horizon labels are predicted based on the multimodal concatenated featu
 
 1.  **Clone the repository:**
     ```bash
-    git clone ...
+    git clone https://github.com/calgo-lab/BGR.git
     ```
 
 2.  **Create a virtual environment (recommended):**
@@ -119,6 +119,12 @@ Here, we provide a summary of the results for the SoilNet (SN) model with 4 diff
 | SN_ResNet_LSTM_Emb      | **51.47** | 35.40          | 6.58           | 8.51           | 9.48           | 59.65          | 33.75          | 33.08          | 68.70          |
 | SN_PatchCNN_LSTM_CE     | 49.52          | 43.99          | 7.20           | 9.03           | 8.26           | 72.02          | **50.33** | 30.33          | 68.61          |
 | SN_ResNet_LSTM_CE       | 49.91          | **45.70** | **7.99** | 9.22           | 8.62           | **76.25** | 49.85          | **35.03** | 69.88          |
+
+# Conformalization
+
+We conducted preliminary experiments conformalizing our model (currently, only the version trained with a ResNet backbone and cross entropy). We were particularly interested in building an uncertainty-driven annotation pipeline, where SoilNet would defer annotaions to an expert whenever its uncertainty in any task was too high. To this extend, we tested multiple uncertainty ranking methods (Monte Carlo Dropout vs conformal intervals for Task 1 and Softmax entropies vs conformal sets in Task 3). 
+
+Paper under review.
 
 # Repository Structure
 The repository is structured as follows (*only relevant files displayed*):
