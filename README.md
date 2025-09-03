@@ -1,6 +1,23 @@
 # SoilNet: A Multimodal Multitask Model for Hierarchical Classification of Soil Horizons
 
+* [Preprint (arXiv)](https://doi.org/10.48550/arXiv.2508.03785)
+
 **Authors:** Teodor Chiaburu, Vipin Singh, Frank Hausser, Felix Biessmann
+
+**Citation**:
+If you use this repository, please consider citing our paper:
+
+```bibtex
+@misc{chiaburu2025soilnetmultimodalmultitaskmodel,
+      title={SoilNet: A Multimodal Multitask Model for Hierarchical Classification of Soil Horizons}, 
+      author={Teodor Chiaburu and Vipin Singh and Frank Haußer and Felix Bießmann},
+      year={2025},
+      eprint={2508.03785},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2508.03785}, 
+}
+```
 
 ---
 
