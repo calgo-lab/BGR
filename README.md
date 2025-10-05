@@ -2,7 +2,7 @@
 
 * [Preprint (arXiv)](https://doi.org/10.48550/arXiv.2508.03785)
 
-**Authors:** Teodor Chiaburu, Vipin Singh, Frank Hausser, Felix Biessmann
+**Authors:** Teodor Chiaburu, Vipin Singh, Einar Eberhardt, Stefan Broda, Frank Hausser, Felix Biessmann
 
 **Citation**:
 If you use this repository, please consider citing our paper:
@@ -139,9 +139,11 @@ Here, we provide a summary of the results for the SoilNet (SN) model with 4 diff
 
 # Conformalization
 
-We conducted preliminary experiments conformalizing our model (currently, only the version trained with a ResNet backbone and cross entropy). We were particularly interested in building an uncertainty-driven annotation pipeline, where SoilNet would defer annotaions to an expert whenever its uncertainty in any task was too high. To this extend, we tested multiple uncertainty ranking methods (Monte Carlo Dropout vs conformal intervals for Task 1 and Softmax entropies vs conformal sets in Task 3). 
+We conducted preliminary experiments conformalizing our model (currently, only the version trained with a ResNet backbone and cross entropy). We were particularly interested in building an uncertainty-driven annotation pipeline, where SoilNet would defer annotations to an expert whenever its uncertainty in any task was too high. To this extend, we tested multiple uncertainty ranking methods (Monte Carlo Dropout vs conformal intervals for Task 1 and Softmax entropies vs conformal sets in Task 3). 
 
-Paper under review.
+Paper presented at the ECAI 2025, CLEAR-AI Workshop, Bologna. Download [here](https://arxiv.org/abs/2509.24873).
+
+Check the experiments in [`notebooks/soil/Conformal_SoilNet.ipynb`](./notebooks/soil/Conformal_SoilNet.ipynb).
 
 # Repository Structure
 The repository is structured as follows (*only relevant files displayed*):
