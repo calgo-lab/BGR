@@ -65,6 +65,9 @@ class HorizonDataProcessor:
         # Note: we don't need to stratify wrt stones (it's numerical)
         self.stratified_split_targets = ['Bodenart', 'Bodenfarbe', 'Karbonat', 'Humusgehaltsklasse', 'Durchwurzelung', 'Horizontsymbol_relevant']
         self.embeddings_dict = None
+        self.f_label_transformations = {}
+        self.f_label_original_unique_count = 0
+        self.f_label_original_row_count = 0
         
     @staticmethod
     def _validate_paths(label_embeddings_path: str, data_folder_path: str) -> None:
@@ -235,6 +238,26 @@ class HorizonDataProcessor:
             inplace=True
         )
         simplification_col = "relevanter Anteil"
+
+        raw_horizon_series = df['Horizontsymbol'].dropna().astype(str)
+        raw_symbol_series = raw_horizon_series.str.split('; ').str[1]
+        f_mask = raw_symbol_series.str.startswith('f', na=False)
+        f_original_labels = sorted(set(raw_symbol_series.loc[f_mask].tolist()))
+        self.f_label_original_unique_count = len(f_original_labels)
+        self.f_label_original_row_count = int(f_mask.sum())
+        self.f_label_transformations = {}
+        for original_label in f_original_labels:
+            simplified_series = df_simple[simplification_col][df_simple['Horiz'] == original_label]
+            simplified = simplified_series.values[0] if not simplified_series.empty else original_label
+            simplified_str = None if pd.isna(simplified) else str(simplified)
+            self.f_label_transformations[str(original_label)] = {
+                "after_simplification": simplified_str,
+                "after_replacements": None,
+                "after_rare_mapping": None,
+                "encoded": None,
+                "file_paths": [],
+            }
+
         df['Horizontsymbol_relevant'] = df['Horizontsymbol'].apply(lambda x: HorizonDataProcessor._simplify_string(x, df_simple, simplification_col))
         cols = df.columns.tolist()
         cols.insert(cols.index('Horizontsymbol') + 1, 'Horizontsymbol_relevant')
@@ -258,6 +281,17 @@ class HorizonDataProcessor:
         img_files['Point'] = img_files['file'].str.split("_").map(lambda x: x[1]).astype(float)
         df = pd.merge(df, img_files, how='inner', on=['Point'])
         df['file'] = df['file'].map(lambda x: os.path.join(image_folder, x))
+
+        raw_symbol_series = df['Horizontsymbol'].astype("string").str.split('; ').str[1]
+        f_mask = raw_symbol_series.str.startswith('f', na=False)
+        if f_mask.any() and hasattr(self, "f_label_transformations") and self.f_label_transformations is not None:
+            tmp = df.loc[f_mask, ['file']].copy()
+            tmp['raw_symbol'] = raw_symbol_series.loc[f_mask].values
+            symbol_to_files = tmp.groupby('raw_symbol')['file'].unique()
+            for raw_symbol, file_paths in symbol_to_files.items():
+                raw_symbol_str = str(raw_symbol)
+                if raw_symbol_str in self.f_label_transformations:
+                    self.f_label_transformations[raw_symbol_str]['file_paths'] = sorted(set(map(str, file_paths)))
         return df
 
     def _merge_geographical_data(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -394,41 +428,60 @@ class HorizonDataProcessor:
             self.embeddings_dict = pickle.load(handle)
         
         # For HCE: create separate dict where labels made out only of main symbols are stripped of the full stop '.'
-        # Note: We will use the label indexes from the embedding dictionary instead of a new sparse one-hot encoding to ease access 
+        # Note: We will use the label indexes from the embedding dictionary instead of a new sparse one-hot encoding to ease access
         # to the embedding vectors during training via the original indexes from the emb_dict
         dict_mapping = {key.strip('.'): value for key, value in self.embeddings_dict['label2ind'].items()}
-        
+
+        if not hasattr(self, "f_label_transformations") or self.f_label_transformations is None:
+            self.f_label_transformations = {}
+        if not self.f_label_transformations:
+            original_unique_labels = pd.unique(df[self.target].dropna())
+            f_original_labels = sorted({str(lab) for lab in original_unique_labels if str(lab).startswith('f')})
+            self.f_label_original_unique_count = len(f_original_labels)
+            self.f_label_original_row_count = int(df[self.target].dropna().astype(str).str.startswith('f').sum())
+            for original_label in f_original_labels:
+                file_paths = []
+                if 'file' in df.columns:
+                    file_paths = sorted(set(df.loc[df[self.target].astype(str) == str(original_label), 'file'].dropna().astype(str).tolist()))
+                self.f_label_transformations[str(original_label)] = {
+                    "after_simplification": str(original_label),
+                    "after_replacements": None,
+                    "after_rare_mapping": None,
+                    "encoded": None,
+                    "file_paths": file_paths,
+                }
+
         # Replace '+' with '-' in the target column (see Label_Graph.ipynb)
         df[self.target] = df[self.target].str.replace('+', '-', regex=False)
-        df[self.target] = df[self.target].str.replace('°', '-', regex=False) # also these, so that there is only one type of mixtures (the minus-mixture)
+        df[self.target] = df[self.target].str.replace('°', '-', regex=False)  # also these, so that there is only one type of mixtures (the minus-mixture)
         # Remove trailing numbers from the labels in the target column (they only account for how often the horizon is seen in the same picture)
         df[self.target] = df[self.target].str.replace(r'\d+$', '', regex=True)
-        
+
         # Replace (rare) main symbols that do not have a counterpart in the graph
         # Note: Mapping was provided by domain experts
         # Note: L-Horizons are not relevant and do not occur at all in the preprocessed dataframe
-        df[self.target] = df[self.target].str.replace('F', 'H', regex=False) # because of common Moor
-        df[self.target] = df[self.target].str.replace('O', 'H', regex=False) # because both organic
-        df[self.target] = df[self.target].str.replace('T', 'P', regex=False) # because both rich in tone
-        df[self.target] = df[self.target].str.replace('Y', 'G', regex=False) # because both dry soils with similar humid features
-        
+        df[self.target] = df[self.target].str.replace('F', 'H', regex=False)  # because of common Moor
+        df[self.target] = df[self.target].str.replace('O', 'H', regex=False)  # because both organic
+        df[self.target] = df[self.target].str.replace('T', 'P', regex=False)  # because both rich in tone
+        df[self.target] = df[self.target].str.replace('Y', 'G', regex=False)  # because both dry soils with similar humid features
+
         # Map rare labels to frequent labels via Levenshtein distance
         rare_labels_mapping = {}
         list_dict_mapping = list(dict_mapping.keys())
         for lab in df[self.target].unique():
             if lab in list_dict_mapping:
-                rare_labels_mapping[lab] = lab # for applying the map later in the df, we need the identity mappings as well
+                rare_labels_mapping[lab] = lab  # for applying the map later in the df, we need the identity mappings as well
             else:
                 similarities = [levenshtein_distance(lab, freq_lab) for freq_lab in list_dict_mapping]
                 best_match = list_dict_mapping[np.argmin(similarities)]
                 rare_labels_mapping[lab] = best_match
-                
+
         # Correct imprecise mappings (some levenshtein results are not geologically plausible)
         for lab in rare_labels_mapping:
             # Skip if the label is already in graph_labels
             if lab in dict_mapping:
                 continue
-            
+
             # Get the components of mixtures or the whole label if non-mixture
             lab_splits = lab.split('-')
             mapped_labels = []
@@ -438,8 +491,41 @@ class HorizonDataProcessor:
             # If the mixture has multiple components in the graph, assign the last component as the frequent label
             # (Analogy German: Hausschlüssel is a Schlüssel)
             if len(mapped_labels) > 0:
-                rare_labels_mapping[lab] = mapped_labels[-1]        
-                
+                rare_labels_mapping[lab] = mapped_labels[-1]
+
+        raw_f_labels = list(self.f_label_transformations.keys())
+        if raw_f_labels:
+            simplified_labels = [self.f_label_transformations[lab].get("after_simplification") for lab in raw_f_labels]
+            f_series = pd.Series(simplified_labels, dtype="string")
+            f_after_replacements = (
+                f_series
+                .str.replace('+', '-', regex=False)
+                .str.replace('°', '-', regex=False)
+                .str.replace(r'\d+$', '', regex=True)
+                .str.replace('F', 'H', regex=False)
+                .str.replace('O', 'H', regex=False)
+                .str.replace('T', 'P', regex=False)
+                .str.replace('Y', 'G', regex=False)
+            )
+            f_after_rare_mapping = f_after_replacements.map(rare_labels_mapping)
+
+            for raw_label, after_replacements, after_rare_mapping in zip(
+                raw_f_labels,
+                f_after_replacements.tolist(),
+                f_after_rare_mapping.tolist(),
+            ):
+                after_replacements_str = None if pd.isna(after_replacements) else str(after_replacements)
+                after_rare_mapping_str = None if pd.isna(after_rare_mapping) else str(after_rare_mapping)
+                encoded = None
+                if after_rare_mapping_str is not None:
+                    encoded_val = dict_mapping.get(after_rare_mapping_str)
+                    if encoded_val is not None and not pd.isna(encoded_val):
+                        encoded = int(encoded_val)
+
+                self.f_label_transformations[str(raw_label)]["after_replacements"] = after_replacements_str
+                self.f_label_transformations[str(raw_label)]["after_rare_mapping"] = after_rare_mapping_str
+                self.f_label_transformations[str(raw_label)]["encoded"] = encoded
+
         df[self.target] = df[self.target].map(rare_labels_mapping)
         df[self.target] = df[self.target].map(dict_mapping)
         df[self.target] = df[self.target].astype(int)
