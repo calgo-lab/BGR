@@ -21,11 +21,11 @@ spec:
           - containerPort: 22
         resources:
           requests:
-            cpu: "10"
-            # memory: 50Gi
+            # cpu: "10"
             nvidia.com/gpu: 1
           limits:
             # memory: 200Gi
+            memory: 100Gi
             nvidia.com/gpu: 1
         volumeMounts:
           - name: bgr-project-pvc
@@ -43,7 +43,7 @@ spec:
             claimName: bgr-project-pvc
         - name: ssh-key
           secret:
-            secretName: my-ssh-public-key
+            secretName: ssh-key-secret
         - name: dshm
           emptyDir:
             medium: Memory

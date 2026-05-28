@@ -33,6 +33,71 @@ def _smooth_step(values: torch.Tensor, mode: str) -> torch.Tensor:
     return 0.5 * (1.0 - torch.cos(torch.pi * values.clamp(0.0, 1.0)))
 
 
+class LowRankBilinearSegmentPool(nn.Module):
+    """Compact bilinear pooling over masked segment regions."""
+
+    def __init__(self, input_dim: int, output_dim: int, rank: int = 128):
+        super().__init__()
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.rank = rank
+
+        self.left_projection = nn.Conv2d(input_dim, rank, kernel_size=1)
+        self.right_projection = nn.Conv2d(input_dim, rank, kernel_size=1)
+        self.output_projection = nn.Linear(rank, output_dim) if rank != output_dim else nn.Identity()
+
+    def forward(self, feature_map: torch.Tensor, segment_masks: torch.Tensor) -> torch.Tensor:
+        batch_size, channels, height, width = feature_map.shape
+        segment_masks_2d = segment_masks.unsqueeze(-1).expand(-1, -1, -1, width)
+
+        masked_feature_map = feature_map.unsqueeze(1) * segment_masks_2d.unsqueeze(2)
+        flat_feature_map = masked_feature_map.view(batch_size * segment_masks.size(1), channels, height, width)
+        flat_mask = segment_masks_2d.view(batch_size * segment_masks.size(1), 1, height, width)
+        flat_mask_sum = flat_mask.sum(dim=(-2, -1)).clamp(min=1e-6)
+
+        left_features = self.left_projection(flat_feature_map)
+        right_features = self.right_projection(flat_feature_map)
+
+        left_pooled = (left_features * flat_mask).sum(dim=(-2, -1)) / flat_mask_sum
+        right_pooled = (right_features * flat_mask).sum(dim=(-2, -1)) / flat_mask_sum
+
+        bilinear_features = left_pooled * right_pooled
+        bilinear_features = self.output_projection(bilinear_features)
+        return bilinear_features.view(batch_size, segment_masks.size(1), -1)
+
+
+class SegmentContextEncoder(nn.Module):
+    """Lightweight transformer encoder for cross-segment context."""
+
+    def __init__(
+        self,
+        input_dim: int,
+        num_layers: int = 2,
+        num_heads: int = 4,
+        dropout: float = 0.1,
+        max_seq_len: int = 8,
+    ):
+        super().__init__()
+        self.input_dim = input_dim
+        self.max_seq_len = max_seq_len
+
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=input_dim,
+            nhead=num_heads,
+            dim_feedforward=input_dim * 4,
+            dropout=dropout,
+            batch_first=True,
+            activation="gelu",
+        )
+        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.positional_embedding = nn.Parameter(torch.zeros(1, max_seq_len, input_dim))
+
+    def forward(self, segment_features: torch.Tensor) -> torch.Tensor:
+        sequence_length = segment_features.size(1)
+        positional_embedding = self.positional_embedding[:, :sequence_length]
+        return self.encoder(segment_features + positional_embedding)
+
+
 def create_soft_segment_masks(
     depth_markers: torch.Tensor,
     feature_height: int,
@@ -174,7 +239,7 @@ class SoilNet_NoGeoTemp_SAM(nn.Module):
     def __init__(
         self,
         image_encoder_output_dim: int = 256,
-        max_seq_len: int = 10,
+        max_seq_len: int = 8,
         stop_token: float = 1.0,
         depth_rnn_hidden_dim: int = 256,
         tabular_output_dim_dict: dict[str, int] | None = None,
@@ -191,6 +256,11 @@ class SoilNet_NoGeoTemp_SAM(nn.Module):
         sam_input_size: int = 1024,
         segment_overlap_pct: float = 0.10,
         boundary_smoothing: str = "cosine",
+        segment_pooling_mode: str = "masked_avg",
+        bilinear_rank: int = 128,
+        segment_attention_layers: int = 2,
+        segment_attention_heads: int = 4,
+        segment_attention_dropout: float = 0.1,
     ):
         super().__init__()
 
@@ -207,6 +277,11 @@ class SoilNet_NoGeoTemp_SAM(nn.Module):
         self.sam_input_size = sam_input_size
         self.segment_overlap_pct = segment_overlap_pct
         self.boundary_smoothing = boundary_smoothing
+        self.segment_pooling_mode = segment_pooling_mode
+        self.bilinear_rank = bilinear_rank
+        self.segment_attention_layers = segment_attention_layers
+        self.segment_attention_heads = segment_attention_heads
+        self.segment_attention_dropout = segment_attention_dropout
 
         self.image_encoder = SAMImageEncoder(
             model_type=sam_model_type,
@@ -223,8 +298,28 @@ class SoilNet_NoGeoTemp_SAM(nn.Module):
             self.stop_token,
         )
 
+        if self.segment_pooling_mode == "bilinear":
+            self.segment_pool = LowRankBilinearSegmentPool(
+                input_dim=self.image_encoder_output_dim,
+                output_dim=self.segment_encoder_output_dim,
+                rank=self.bilinear_rank,
+            )
+        else:
+            self.segment_pool = None
+
+        if self.segment_attention_layers > 0:
+            self.segment_context_encoder = SegmentContextEncoder(
+                input_dim=self.segment_encoder_output_dim,
+                num_layers=self.segment_attention_layers,
+                num_heads=self.segment_attention_heads,
+                dropout=self.segment_attention_dropout,
+                max_seq_len=self.max_seq_len,
+            )
+        else:
+            self.segment_context_encoder = nn.Identity()
+
         self.tabular_predictors = nn.ModuleDict()
-        segments_tabular_input_dim = 0
+        predicted_tabular_input_dim = 0
         for key, output_dim in self.tabular_output_dim_dict.items():
             self.tabular_predictors[key] = LSTMTabularPredictor(
                 input_dim=self.segment_encoder_output_dim,
@@ -232,10 +327,15 @@ class SoilNet_NoGeoTemp_SAM(nn.Module):
                 hidden_dim=self.tab_rnn_hidden_dim,
                 num_lstm_layers=self.tab_num_lstm_layers,
             )
-            segments_tabular_input_dim += output_dim
+            predicted_tabular_input_dim += output_dim
 
-        self.segments_tabular_encoder = nn.Sequential(
-            nn.Linear(segments_tabular_input_dim, self.segments_tabular_output_dim),
+        self.predicted_segments_tabular_encoder = nn.Sequential(
+            nn.Linear(predicted_tabular_input_dim, self.segments_tabular_output_dim),
+            nn.ReLU(),
+        )
+
+        self.true_segments_tabular_encoder = nn.Sequential(
+            nn.LazyLinear(self.segments_tabular_output_dim),
             nn.ReLU(),
         )
 
@@ -263,6 +363,9 @@ class SoilNet_NoGeoTemp_SAM(nn.Module):
         return False
 
     def _segment_pool(self, feature_map: torch.Tensor, segment_masks: torch.Tensor) -> torch.Tensor:
+        if self.segment_pool is not None:
+            return self.segment_pool(feature_map, segment_masks)
+
         batch_size, channels, height, width = feature_map.shape
         segment_masks_2d = segment_masks.unsqueeze(-1).expand(-1, -1, -1, width)
         masked_features = feature_map.unsqueeze(1) * segment_masks_2d.unsqueeze(2)
@@ -278,6 +381,12 @@ class SoilNet_NoGeoTemp_SAM(nn.Module):
         true_tabular_features: Optional[torch.Tensor] = None,
         use_trues_during_inference: bool = False,
     ):
+        effective_num_segments = self.max_seq_len
+        if true_tabular_features is not None and true_tabular_features.numel() > 0:
+            effective_num_segments = true_tabular_features.size(1)
+        elif true_padded_depths is not None and true_padded_depths.numel() > 0:
+            effective_num_segments = true_padded_depths.size(1)
+
         if not self.training and use_trues_during_inference:
             teacher_forcing_decision = True
         elif self.epoch < self.teacher_forcing_stop_epoch + 1:
@@ -287,33 +396,34 @@ class SoilNet_NoGeoTemp_SAM(nn.Module):
 
         feature_map = self.image_encoder(padded_image, image_mask)
         image_features = feature_map.mean(dim=(2, 3))
-        depth_markers = self.depth_marker_predictor(image_features)
+        depth_markers = self.depth_marker_predictor(image_features)[:, :effective_num_segments]
 
         if teacher_forcing_decision and true_padded_depths is not None:
-            processed_depth_markers = true_padded_depths
+            processed_depth_markers = true_padded_depths[:, :effective_num_segments]
         else:
             processed_depth_markers = depth_markers
 
         segment_masks = create_soft_segment_masks(
             processed_depth_markers,
             feature_height=feature_map.shape[-2],
-            num_segments=self.max_seq_len,
+            num_segments=effective_num_segments,
             overlap_pct=self.segment_overlap_pct,
             stop_token=self.stop_token,
             smoothing=self.boundary_smoothing,
         )
         segment_features = self._segment_pool(feature_map, segment_masks)
+        segment_features = self.segment_context_encoder(segment_features)
 
         tabular_predictions = {}
         for key, predictor in self.tabular_predictors.items():
-            tabular_predictions[key] = predictor(segment_features)
+            tabular_predictions[key] = predictor(segment_features)[:, :effective_num_segments]
 
         if teacher_forcing_decision and true_tabular_features is not None:
-            processed_tabular_features = true_tabular_features.view(padded_image.size(0), self.max_seq_len, -1)
+            processed_tabular_features = true_tabular_features[:, :effective_num_segments].view(padded_image.size(0), effective_num_segments, -1)
+            tabular_embeddings = self.true_segments_tabular_encoder(processed_tabular_features)
         else:
             processed_tabular_features = torch.cat([tabular_predictions[key] for key in self.tabular_predictors.keys()], dim=-1)
-
-        tabular_embeddings = self.segments_tabular_encoder(processed_tabular_features)
+            tabular_embeddings = self.predicted_segments_tabular_encoder(processed_tabular_features)
         segment_tabular_features = torch.cat([segment_features, tabular_embeddings], dim=-1)
 
         batch_size, num_segments, _ = segment_tabular_features.shape

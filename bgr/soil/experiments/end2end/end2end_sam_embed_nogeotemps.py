@@ -47,21 +47,31 @@ class End2EndSAMEmbed_NoGeoTemps(End2EndLSTMResNetEmbed_NoGeoTemps):
             sam_input_size=self.hyperparameters["sam_input_size"],
             segment_overlap_pct=self.hyperparameters["segment_overlap_pct"],
             boundary_smoothing=self.hyperparameters["boundary_smoothing"],
+            segment_pooling_mode=self.hyperparameters["segment_pooling_mode"],
+            bilinear_rank=self.hyperparameters["bilinear_rank"],
+            segment_attention_layers=self.hyperparameters["segment_attention_layers"],
+            segment_attention_heads=self.hyperparameters["segment_attention_heads"],
+            segment_attention_dropout=self.hyperparameters["segment_attention_dropout"],
         )
 
     @staticmethod
     def get_experiment_hyperparameters() -> dict:
         return {
-            "sam_model_type": "vit_b",
+            "sam_model_type": "vit_h",
             "sam_checkpoint": "",
             "sam_trainable_layers": 4,
             "sam_input_size": 1024,
             "image_encoder_output_dim": 256,
-            "max_seq_len": 10,
+            "max_seq_len": 8,
             "stop_token": 1.0,
             "depth_rnn_hidden_dim": 256,
             "segment_overlap_pct": 0.10,
             "boundary_smoothing": "cosine",
+            "segment_pooling_mode": "masked_avg",
+            "bilinear_rank": 128,
+            "segment_attention_layers": 2,
+            "segment_attention_heads": 4,
+            "segment_attention_dropout": 0.1,
             "segment_encoder_output_dim": 256,
             "tab_rnn_hidden_dim": 1024,
             "tab_num_lstm_layers": 2,
