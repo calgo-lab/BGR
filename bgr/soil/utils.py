@@ -340,3 +340,90 @@ def extract_segments(padded_images, image_masks, processed_depth_markers,
         segments_batch.append(seg_tensor)
 
     return torch.stack(segments_batch, dim=0)  # (N, ...)
+
+def create_soft_segment_masks(image_masks, processed_depth_markers, smoothing_percentage=0.1, stop_token=1.0, max_seq_len=None):
+    """
+    Creates soft segment masks with vertical-only smoothing in neighboring regions.
+    
+    Args:
+        image_masks (torch.Tensor): Boolean mask of shape (N, H_pad, W_pad) or (N, 1, H_pad, W_pad).
+        processed_depth_markers (torch.Tensor): Normalized depth markers (N, max_seq_len).
+        smoothing_percentage (float): Percentage of segment height to use for smoothing.
+        stop_token (float): Token indicating the end of segments.
+        max_seq_len (int): If None, inferred from processed_depth_markers.
+    
+    Returns:
+        torch.Tensor: Soft masks of shape (N, max_seq_len, H_pad, W_pad).
+    """
+    if image_masks.dim() == 4:
+        image_masks = image_masks.squeeze(1)
+        
+    N, H_pad, W_pad = image_masks.shape
+    if max_seq_len is None:
+        max_seq_len = processed_depth_markers.shape[1]
+        
+    device = image_masks.device
+    soft_masks = torch.zeros((N, max_seq_len, H_pad, W_pad), device=device)
+    
+    for i in range(N):
+        mask = image_masks[i]
+        depth_row = processed_depth_markers[i]
+        
+        # Determine true image height from the mask
+        rows_with_true = torch.any(mask, dim=1)
+        if not torch.any(rows_with_true):
+            continue
+            
+        row_indices = rows_with_true.nonzero(as_tuple=True)[0]
+        min_row, max_row = row_indices[0], row_indices[-1]
+        h_img = max_row - min_row + 1
+        
+        # Process depths and convert to pixel bounds relative to the image start (min_row)
+        depths = depth_row.tolist()
+        if stop_token in depths:
+            idx = depths.index(stop_token) + 1
+            depths = depths[:idx]
+            
+        pixel_bounds = [0] + [int(d * h_img) for d in depths]
+        num_segs = len(pixel_bounds) - 1
+        
+        for j in range(min(num_segs, max_seq_len)):
+            upper_rel, lower_rel = pixel_bounds[j], pixel_bounds[j+1]
+            seg_h = lower_rel - upper_rel
+            if seg_h <= 0:
+                continue
+            
+            # Absolute pixel coordinates
+            abs_upper = min_row + upper_rel
+            abs_lower = min_row + lower_rel
+            
+            # Smoothing width
+            s_width = int(seg_h * smoothing_percentage)
+            
+            # Create 1D vertical profile
+            profile = torch.zeros(H_pad, device=device)
+            # Plateau
+            profile[abs_upper : abs_lower] = 1.0
+            
+            # Top ramp (abs_upper - s_width to abs_upper)
+            if s_width > 0:
+                top_start = max(0, abs_upper - s_width)
+                top_len = abs_upper - top_start
+                if top_len > 0:
+                    # Linear ramp from 0 to 1
+                    ramp = torch.linspace(0, 1, top_len, device=device)
+                    profile[top_start : abs_upper] = ramp
+                
+                # Bottom ramp (abs_lower to abs_lower + s_width)
+                bot_end = min(H_pad, abs_lower + s_width)
+                bot_len = bot_end - abs_lower
+                if bot_len > 0:
+                    # Linear ramp from 1 to 0
+                    ramp = torch.linspace(1, 0, bot_len, device=device)
+                    profile[abs_lower : bot_end] = ramp
+            
+            # Expand profile to (H_pad, W_pad) and apply image mask
+            seg_mask = profile.unsqueeze(1).expand(H_pad, W_pad) * mask
+            soft_masks[i, j] = seg_mask
+            
+    return soft_masks

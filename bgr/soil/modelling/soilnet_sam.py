@@ -234,7 +234,11 @@ class SAMImageEncoder(nn.Module):
 
 
 class SoilNet_NoGeoTemp_SAM(nn.Module):
-    """End-to-end model predicting depths, tabular features and horizon embeddings."""
+    """End-to-end model predicting depths, tabular features and horizon embeddings.
+
+    Optional soft-cropping and simplified segment context (disabled by default)
+    to make behavior comparable to non-SAM variants.
+    """
 
     def __init__(
         self,
@@ -254,6 +258,7 @@ class SoilNet_NoGeoTemp_SAM(nn.Module):
         sam_checkpoint: Optional[str] = None,
         sam_trainable_layers: int = 4,
         sam_input_size: int = 1024,
+        use_soft_crop: bool = True,
         segment_overlap_pct: float = 0.10,
         boundary_smoothing: str = "cosine",
         segment_pooling_mode: str = "masked_avg",
@@ -291,6 +296,9 @@ class SoilNet_NoGeoTemp_SAM(nn.Module):
             sam_input_size=sam_input_size,
         )
 
+        # Whether to use soft (smooth, overlapping) segment masks or hard/non-overlapping masks
+        self.use_soft_crop = use_soft_crop
+
         self.depth_marker_predictor = LSTMDepthMarkerPredictorWithGuardrails(
             self.image_encoder_output_dim,
             self.depth_rnn_hidden_dim,
@@ -307,16 +315,9 @@ class SoilNet_NoGeoTemp_SAM(nn.Module):
         else:
             self.segment_pool = None
 
-        if self.segment_attention_layers > 0:
-            self.segment_context_encoder = SegmentContextEncoder(
-                input_dim=self.segment_encoder_output_dim,
-                num_layers=self.segment_attention_layers,
-                num_heads=self.segment_attention_heads,
-                dropout=self.segment_attention_dropout,
-                max_seq_len=self.max_seq_len,
-            )
-        else:
-            self.segment_context_encoder = nn.Identity()
+        # Cross-attention / transformer-based segment context removed for
+        # ablation simplicity — use identity to keep features comparable.
+        self.segment_context_encoder = nn.Identity()
 
         self.tabular_predictors = nn.ModuleDict()
         predicted_tabular_input_dim = 0
@@ -403,14 +404,24 @@ class SoilNet_NoGeoTemp_SAM(nn.Module):
         else:
             processed_depth_markers = depth_markers
 
+        # Create segment masks. If soft cropping is disabled, create a
+        # non-overlapping hard mask (derived from the soft masks) so pooling
+        # behavior is comparable but without smooth overlaps.
         segment_masks = create_soft_segment_masks(
             processed_depth_markers,
             feature_height=feature_map.shape[-2],
             num_segments=effective_num_segments,
-            overlap_pct=self.segment_overlap_pct,
+            overlap_pct=self.segment_overlap_pct if self.use_soft_crop else 0.0,
             stop_token=self.stop_token,
-            smoothing=self.boundary_smoothing,
+            smoothing=self.boundary_smoothing if self.use_soft_crop else "linear",
         )
+        if not self.use_soft_crop:
+            # Convert to hard one-hot masks per row to avoid overlaps
+            # segment_masks: (B, S, H) -> argmax over S -> one_hot -> (B, S, H)
+            arg = segment_masks.argmax(dim=1)  # (B, H)
+            one_hot = F.one_hot(arg, num_classes=segment_masks.size(1)).permute(0, 2, 1).float()
+            mask_sum = one_hot.sum(dim=1, keepdim=True).clamp(min=1e-6)
+            segment_masks = one_hot / mask_sum
         segment_features = self._segment_pool(feature_map, segment_masks)
         segment_features = self.segment_context_encoder(segment_features)
 

@@ -1,3 +1,5 @@
+from typing import Literal
+import warnings
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -6,8 +8,10 @@ from bgr.soil.modelling.geotemp_modules import GeoTemporalEncoder
 from bgr.soil.modelling.horizon.horizon_modules import HorizonEmbedder, HorizonLSTMEmbedder
 from bgr.soil.modelling.image_modules import PatchCNNEncoder, ResNetEncoder, ResNetPatchEncoder, MaskedResNetImageEncoder
 from bgr.soil.modelling.tabulars.tabular_modules import LSTMTabularPredictor, MLPTabularPredictor
+from bgr.soil.modelling.segment_encoder import SoftCroppedSegmentEncoder
 
-from bgr.soil.utils import unpad_image_using_mask, tensor_random_crop_reflect, extract_segments
+from bgr.soil.utils import unpad_image_using_mask, tensor_random_crop_reflect, extract_segments, create_soft_segment_masks
+from bgr.soil.modelling.soilnet_sam import LowRankBilinearSegmentPool
 
 
 class SoilNet_LSTM(nn.Module):
@@ -258,14 +262,16 @@ class SoilNet_NoGeoTemp_LSTM(nn.Module):
         depth_rnn_hidden_dim : int = 256, # params for LSTMDepthPredictor
         #depth_num_lstm_layers : int = 2, # should we allow the user to select this?
         img_patch_size : int = 512,  # may be different from segment patch sizes below
-        segments_random_patches : bool = False, # currently used for both img and seg encoders
+        
+        # Parameters for segment encoding:
+        segment_encoding_mode : Literal["random_patches", "patch_cnn", "softcropping"] = "random_patches", # currently used for both img and seg encoders
         num_patches_per_segment : int = 8, # number of patches per segment (only used if segments_random_patches is True)
         segment_random_patch_size : int = 224, # size of the random patches (only used if segments_random_patches is True)
+        patch_cnn_segment_size : int = 512, # size of the patches for the PatchCNN segment encoder (only used if segments_random_patches is False)
+        segment_encoder_output_dim : int = 512,
 
         # Parameters for tabular predictors:
         tabular_output_dim_dict : dict[str, int] = {}, # name_tabular: output_dim
-        segment_encoder_output_dim : int = 512,
-        patch_cnn_segment_size : int = 512,
         tab_rnn_hidden_dim : int = 1024,
         tab_num_lstm_layers : int = 2,
         
@@ -279,7 +285,10 @@ class SoilNet_NoGeoTemp_LSTM(nn.Module):
         
         # Parameters for the model:
         teacher_forcing_stop_epoch : int = 5,
-        teacher_forcing_approach : str = 'linear', # 'linear' or 'binary'
+        teacher_forcing_approach : str = 'linear', # 'linear' or 'binary',
+        
+        # Catch deprecated parameters with kwargs
+        **kwargs
     ):
         super(SoilNet_NoGeoTemp_LSTM, self).__init__()
         
@@ -289,12 +298,18 @@ class SoilNet_NoGeoTemp_LSTM(nn.Module):
         self.stop_token = stop_token
         self.depth_rnn_hidden_dim = depth_rnn_hidden_dim
         self.img_patch_size = img_patch_size
-        self.segments_random_patches = segments_random_patches
+        
+        if "segments_random_patches" in kwargs:
+            warnings.warn("Use 'segment_encoding_mode' instead of 'segments_random_patches'.", DeprecationWarning, stacklevel=2)
+            old_value = kwargs.pop("segments_random_patches")
+            segment_encoding_mode = "random_patches" if old_value else "patch_cnn"
+        self.segment_encoding_mode = segment_encoding_mode
         self.num_patches_per_segment = num_patches_per_segment
         self.segment_random_patch_size = segment_random_patch_size
-        self.tabular_output_dim_dict = tabular_output_dim_dict
-        self.segment_encoder_output_dim = segment_encoder_output_dim
         self.patch_cnn_segment_size = patch_cnn_segment_size
+        self.segment_encoder_output_dim = segment_encoder_output_dim
+        
+        self.tabular_output_dim_dict = tabular_output_dim_dict
         self.tab_rnn_hidden_dim = tab_rnn_hidden_dim
         self.tab_num_lstm_layers = tab_num_lstm_layers
         self.segments_tabular_output_dim = segments_tabular_output_dim
@@ -304,10 +319,14 @@ class SoilNet_NoGeoTemp_LSTM(nn.Module):
         
         ### Define modules and task models ###
         # Image and segment encoders
-        if self.segments_random_patches:
+        if self.segment_encoding_mode == "random_patches":
             self.segment_encoder = ResNetPatchEncoder(output_dim=self.segment_encoder_output_dim, resnet_version='18')
-        else:
+        elif self.segment_encoding_mode == "patch_cnn":
             self.segment_encoder = PatchCNNEncoder(patch_size=patch_cnn_segment_size, patch_stride=patch_cnn_segment_size, output_dim=segment_encoder_output_dim)
+        elif self.segment_encoding_mode == "softcropping":
+            self.segment_encoder = SoftCroppedSegmentEncoder(backbone='resnet18', pretrained=True, output_dim=self.segment_encoder_output_dim, bilinear_dim=self.segment_encoder_output_dim)
+        else:
+            raise ValueError(f"Unsupported segment encoding mode: {self.segment_encoding_mode}")
         
         # Depth marker predictor
         self.depth_marker_predictor = LSTMDepthMarkerPredictorWithGuardrails(self.image_encoder_output_dim, self.depth_rnn_hidden_dim, self.max_seq_len, self.stop_token)
@@ -403,27 +422,38 @@ class SoilNet_NoGeoTemp_LSTM(nn.Module):
         else:
             processed_depth_markers = depth_markers # Use predicted depths if not training
         
-        # Crop image to segments
-        segments = extract_segments(padded_image, image_mask, processed_depth_markers,
-                                    self.segments_random_patches, self.patch_cnn_segment_size, self.num_patches_per_segment, self.segment_random_patch_size, 
-                                    self.stop_token, self.max_seq_len)
+        if self.segment_encoding_mode != "softcropping":
+            # Crop image to segments
+            segments = extract_segments(padded_image, image_mask, processed_depth_markers,
+                                        self.segment_encoding_mode == "random_patches", self.patch_cnn_segment_size, self.num_patches_per_segment, self.segment_random_patch_size, 
+                                        self.stop_token, self.max_seq_len)
+        else:
+            # Implement soft segment masks, with respect to the image_mask
+            segment_masks = create_soft_segment_masks(image_mask, processed_depth_markers, max_seq_len=self.max_seq_len)
         
 
-        if self.segments_random_patches:
+        if self.segment_encoding_mode == "random_patches":
             batch_size, num_segments, num_patches, C, H, W = segments.shape
-        else:
+        elif self.segment_encoding_mode == "patch_cnn":
             batch_size, num_segments, C, H, W = segments.shape
+        else:
+            batch_size, C, H, W = padded_image.shape
+            batch_size, num_segments, H, W = segment_masks.shape
         
         # Encode each segment individually
         segment_features_list = []
         for i in range(num_segments):
-            if self.segments_random_patches:
+            if self.segment_encoding_mode == "random_patches":
                 segment_patches = segments[:, i, :, :, :, :] # One additional dimension for the random patches
                 segment_features = self.segment_encoder(segment_patches)
-            else:
+            elif self.segment_encoding_mode == "patch_cnn":
                 segment = segments[:, i, :, :, :]
                 segment_features = self.segment_encoder(segment)
+            elif self.segment_encoding_mode == "softcropping":
+                segment_mask = segment_masks[:, i, :, :].unsqueeze(1) # (B, 1, H, W)
+                segment_features = self.segment_encoder(padded_image, segment_mask) #TEST
             segment_features_list.append(segment_features)
+            
         segment_features = torch.stack(segment_features_list, dim=1)
         
         # Pass through LSTM predictors
@@ -462,6 +492,196 @@ class SoilNet_NoGeoTemp_LSTM(nn.Module):
             return torch.rand(1).item() < probability
         else:
             return False
+
+
+class SoilNet_NoGeoTemp_LSTM_Softcrop(nn.Module):
+    """LSTM-based SoilNet variant using soft (or hard) vertical cropping on
+    a ResNet feature map instead of per-segment image cropping.
+    """
+
+    def __init__(
+        self,
+        image_encoder_output_dim: int = 512,
+        max_seq_len: int = 10,
+        stop_token: float = 1.0,
+        depth_rnn_hidden_dim: int = 256,
+        tabular_output_dim_dict: dict[str, int] = {},
+        segment_encoder_output_dim: int = 512,
+        tab_rnn_hidden_dim: int = 1024,
+        tab_num_lstm_layers: int = 2,
+        segments_tabular_output_dim: int = 64,
+        embedding_dim: int = 61,
+        teacher_forcing_stop_epoch: int = 5,
+        teacher_forcing_approach: str = "linear",
+        # softcrop params
+        use_soft_crop: bool = True,
+        segment_overlap_pct: float = 0.10,
+        boundary_smoothing: str = "cosine",
+        segment_pooling_mode: str = "masked_avg",
+        bilinear_rank: int = 128,
+    ):
+        super().__init__()
+
+        self.image_encoder_output_dim = image_encoder_output_dim
+        self.max_seq_len = max_seq_len
+        self.stop_token = stop_token
+        self.depth_rnn_hidden_dim = depth_rnn_hidden_dim
+        self.tabular_output_dim_dict = tabular_output_dim_dict
+        self.segment_encoder_output_dim = segment_encoder_output_dim
+        self.tab_rnn_hidden_dim = tab_rnn_hidden_dim
+        self.tab_num_lstm_layers = tab_num_lstm_layers
+        self.segments_tabular_output_dim = segments_tabular_output_dim
+        self.embedding_dim = embedding_dim
+
+        # ResNet-based encoder (we will use its backbone for feature_map pooling)
+        self.image_encoder = MaskedResNetImageEncoder(resnet_version='18', output_embedding_dim=self.image_encoder_output_dim)
+
+        # Depth predictor uses pooled image features
+        self.depth_marker_predictor = LSTMDepthMarkerPredictorWithGuardrails(
+            self.image_encoder_output_dim, self.depth_rnn_hidden_dim, self.max_seq_len, self.stop_token
+        )
+
+        # Segment pooling options
+        self.use_soft_crop = use_soft_crop
+        self.segment_overlap_pct = segment_overlap_pct
+        self.boundary_smoothing = boundary_smoothing
+        self.segment_pooling_mode = segment_pooling_mode
+        self.bilinear_rank = bilinear_rank
+
+        if self.segment_pooling_mode == "bilinear":
+            self.segment_pool = LowRankBilinearSegmentPool(
+                input_dim=self.image_encoder.feature_dim,
+                output_dim=self.segment_encoder_output_dim,
+                rank=self.bilinear_rank,
+            )
+        else:
+            self.segment_pool = None
+
+        # If pooled feature channels != desired segment encoder dim, project
+        feat_dim = self.image_encoder.feature_dim
+        if feat_dim != self.segment_encoder_output_dim:
+            self.segment_feature_projection = nn.Linear(feat_dim, self.segment_encoder_output_dim)
+        else:
+            self.segment_feature_projection = nn.Identity()
+
+        # Tabular predictors
+        self.tabular_predictors = nn.ModuleDict()
+        predicted_tabular_input_dim = 0
+        for key, output_dim in self.tabular_output_dim_dict.items():
+            self.tabular_predictors[key] = LSTMTabularPredictor(
+                input_dim=self.segment_encoder_output_dim,
+                output_dim=output_dim,
+                hidden_dim=self.tab_rnn_hidden_dim,
+                num_lstm_layers=self.tab_num_lstm_layers,
+            )
+            predicted_tabular_input_dim += output_dim
+
+        self.predicted_segments_tabular_encoder = nn.Sequential(
+            nn.Linear(predicted_tabular_input_dim, self.segments_tabular_output_dim),
+            nn.ReLU(),
+        )
+
+        self.true_segments_tabular_encoder = nn.Sequential(
+            nn.LazyLinear(self.segments_tabular_output_dim),
+            nn.ReLU(),
+        )
+
+        self.horizon_embedder = HorizonLSTMEmbedder(
+            input_dim=self.segment_encoder_output_dim + self.segments_tabular_output_dim,
+            output_dim=self.embedding_dim,
+            hidden_dim=256,
+        )
+
+        self.epoch = 0
+        self.teacher_forcing_probs = {
+            epoch: 1 - ((epoch - 1) / teacher_forcing_stop_epoch) if teacher_forcing_approach == "linear" else 1.0
+            for epoch in range(1, teacher_forcing_stop_epoch + 1)
+        }
+        self.teacher_forcing_stop_epoch = teacher_forcing_stop_epoch
+
+    def train(self, mode: bool = True):
+        if mode:
+            self.epoch += 1
+        return super().train(mode)
+
+    def teacher_forcing_decision(self, probability: float) -> bool:
+        if self.training:
+            return torch.rand(1).item() < probability
+        return False
+
+    def _segment_pool(self, feature_map: torch.Tensor, segment_masks: torch.Tensor) -> torch.Tensor:
+        if self.segment_pool is not None:
+            return self.segment_pool(feature_map, segment_masks)
+
+        batch_size, channels, height, width = feature_map.shape
+        segment_masks_2d = segment_masks.unsqueeze(-1).expand(-1, -1, -1, width)
+        masked_features = feature_map.unsqueeze(1) * segment_masks_2d.unsqueeze(2)
+        feature_sum = masked_features.sum(dim=(-2, -1))
+        mask_sum = segment_masks_2d.sum(dim=(-2, -1)).unsqueeze(-1).clamp(min=1e-6)
+        return (feature_sum / mask_sum)
+
+    def forward(self, padded_image: torch.Tensor, image_mask: torch.Tensor, true_padded_depths: Optional[torch.Tensor] = None, true_tabular_features: Optional[torch.Tensor] = None, use_trues_during_inference: bool = False):
+        effective_num_segments = self.max_seq_len
+        if true_tabular_features is not None and true_tabular_features.numel() > 0:
+            effective_num_segments = true_tabular_features.size(1)
+        elif true_padded_depths is not None and true_padded_depths.numel() > 0:
+            effective_num_segments = true_padded_depths.size(1)
+
+        if not self.training and use_trues_during_inference:
+            teacher_forcing_decision = True
+        elif self.epoch < self.teacher_forcing_stop_epoch + 1:
+            teacher_forcing_decision = self.teacher_forcing_decision(self.teacher_forcing_probs[self.epoch])
+        else:
+            teacher_forcing_decision = False
+
+        # Get feature map from the ResNet backbone
+        feature_map = self.image_encoder.backbone(padded_image)
+        # Global pooled features for depth predictor
+        image_features = self.image_encoder(padded_image, image_mask)
+        depth_markers = self.depth_marker_predictor(image_features)[:, :effective_num_segments]
+
+        if teacher_forcing_decision and true_padded_depths is not None:
+            processed_depth_markers = true_padded_depths[:, :effective_num_segments]
+        else:
+            processed_depth_markers = depth_markers
+
+        # Create segment masks
+        segment_masks = create_soft_segment_masks(
+            processed_depth_markers,
+            feature_height=feature_map.shape[-2],
+            num_segments=effective_num_segments,
+            overlap_pct=self.segment_overlap_pct if self.use_soft_crop else 0.0,
+            stop_token=self.stop_token,
+            smoothing=self.boundary_smoothing if self.use_soft_crop else "linear",
+        )
+        if not self.use_soft_crop:
+            arg = segment_masks.argmax(dim=1)
+            one_hot = F.one_hot(arg, num_classes=segment_masks.size(1)).permute(0, 2, 1).float()
+            mask_sum = one_hot.sum(dim=1, keepdim=True).clamp(min=1e-6)
+            segment_masks = one_hot / mask_sum
+
+        segment_features = self._segment_pool(feature_map, segment_masks)
+        # Project pooled features to desired segment dim
+        segment_features = self.segment_feature_projection(segment_features)
+
+        # Tabular predictions
+        tabular_predictions = {}
+        for key, predictor in self.tabular_predictors.items():
+            tabular_predictions[key] = predictor(segment_features)[:, :effective_num_segments]
+
+        if teacher_forcing_decision and true_tabular_features is not None:
+            processed_tabular_features = true_tabular_features[:, :effective_num_segments].view(padded_image.size(0), effective_num_segments, -1)
+            tabular_embeddings = self.true_segments_tabular_encoder(processed_tabular_features)
+        else:
+            processed_tabular_features = torch.cat([tabular_predictions[key] for key in self.tabular_predictors.keys()], dim=-1)
+            tabular_embeddings = self.predicted_segments_tabular_encoder(processed_tabular_features)
+
+        segment_tabular_features = torch.cat([segment_features, tabular_embeddings], dim=-1)
+
+        batch_size, num_segments, _ = segment_tabular_features.shape
+        horizon_embeddings = self.horizon_embedder(segment_tabular_features.view(batch_size * num_segments, -1), num_segments)
+
+        return depth_markers, tabular_predictions, horizon_embeddings
 
 # DEPRECATED:
 class HorizonClassifier(nn.Module):
