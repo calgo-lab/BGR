@@ -60,23 +60,51 @@ class DINOv2SpatialBackbone(nn.Module):
 
 
 class SoftCroppedSegmentEncoder(nn.Module):
-    def __init__(self, backbone='resnet18', pretrained=True, output_dim=512, bilinear_dim=64):
+    def __init__(
+        self,
+        backbone: str = 'resnet18',
+        pretrained: bool = True,
+        output_dim: int = 512,
+        bilinear_dim: int = 128,
+        train_backbone: bool = False,
+        feed_mask_to_backbone: bool = True,
+    ):
         """
-        backbone    : 'resnet18' | 'resnet50' | 'dinov2_vits14'
-        pretrained  : load pretrained weights
-        output_dim  : final embedding dimension
-        bilinear_dim: projection dim before bilinear pool — output is bilinear_dim²
-                      before the final projection. 64 → 4096 intermediate dim.
+        Parameters
+        ----------
+        backbone : str
+            'resnet18' | 'resnet50' | 'dinov2_vits14' | 'dinov2_vitb14' | 'dinov2_vitl14'
+        pretrained : bool
+            Load pretrained weights.
+        output_dim : int
+            Final embedding dimension.
+        bilinear_dim : int
+            Projection dim before bilinear pool — output is bilinear_dim²
+            before the final projection. 128 → 16384 intermediate dim.
+        train_backbone : bool
+            If True, unfreeze backbone weights for fine-tuning.
+            If False (default), backbone is frozen and only head layers train.
+        feed_mask_to_backbone : bool
+            If True (default), append mask as 4th input channel (Option A).
+            The backbone processes the mask alongside RGB during feature extraction.
+            If False, mask is only used in the bilinear pool (Option C).
+            When False, the backbone uses standard 3-channel pretrained weights
+            (no 4th-channel expansion). Safe to combine with train_backbone=True.
         """
         super().__init__()
         self.bilinear_dim = bilinear_dim
+        self.feed_mask_to_backbone = feed_mask_to_backbone
 
         if backbone == 'resnet18':
             base = models.resnet18(
                 weights=models.resnet.ResNet18_Weights.DEFAULT if pretrained else None
             )
             backbone_out_dim = base.fc.in_features           # 512
-            base.conv1 = self._expand_conv_channels(base.conv1)
+            # Expand conv1 to 4 channels only when the mask is passed as 4th input.
+            # When feed_mask_to_backbone=False, conv1 stays at 3 channels (standard
+            # pretrained weights) and the mask is only used in the bilinear pool.
+            if feed_mask_to_backbone:
+                base.conv1 = self._expand_conv_channels(base.conv1)
             base.fc = nn.Identity()
             self.backbone = ResNetSpatialBackbone(base)
 
@@ -85,28 +113,51 @@ class SoftCroppedSegmentEncoder(nn.Module):
                 weights=models.resnet.ResNet50_Weights.DEFAULT if pretrained else None
             )
             backbone_out_dim = base.fc.in_features           # 2048
-            base.conv1 = self._expand_conv_channels(base.conv1)
+            if feed_mask_to_backbone:
+                base.conv1 = self._expand_conv_channels(base.conv1)
             base.fc = nn.Identity()
             self.backbone = ResNetSpatialBackbone(base)
 
         elif backbone == 'dinov2_vits14':
             dino = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14', pretrained=pretrained)
-            backbone_out_dim = dino.embed_dim                # 384 for ViT-S/14
-            dino.patch_embed.proj = self._expand_conv_channels(dino.patch_embed.proj)
+            backbone_out_dim = dino.embed_dim                # 384
+            # Expand patch_embed to 4 channels only when the mask is passed as 4th input.
+            # When feed_mask_to_backbone=False, the standard 3-channel patch_embed is used
+            # and DINOv2SpatialBackbone.forward will never try to slice a 4th channel.
+            if feed_mask_to_backbone:
+                dino.patch_embed.proj = self._expand_conv_channels(dino.patch_embed.proj)
+            self.backbone = DINOv2SpatialBackbone(dino)
+
+        elif backbone == 'dinov2_vitb14':
+            dino = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14', pretrained=pretrained)
+            backbone_out_dim = dino.embed_dim                # 768
+            if feed_mask_to_backbone:
+                dino.patch_embed.proj = self._expand_conv_channels(dino.patch_embed.proj)
+            self.backbone = DINOv2SpatialBackbone(dino)
+
+        elif backbone == 'dinov2_vitl14':
+            dino = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14', pretrained=pretrained)
+            backbone_out_dim = dino.embed_dim                # 1024
+            if feed_mask_to_backbone:
+                dino.patch_embed.proj = self._expand_conv_channels(dino.patch_embed.proj)
             self.backbone = DINOv2SpatialBackbone(dino)
 
         else:
             raise ValueError(
                 f"Unsupported backbone '{backbone}'. "
-                "Choose 'resnet18', 'resnet50', or 'dinov2_vits14'."
+                "Choose 'resnet18', 'resnet50', 'dinov2_vits14', "
+                "'dinov2_vitb14', or 'dinov2_vitl14'."
             )
 
-        # Project to smaller space before bilinear pool to avoid D² explosion.
-        # bilinear_dim=64 → 4096-dim covariance, tractable for any backbone.
         self.proj_bilinear = nn.Linear(backbone_out_dim, bilinear_dim)
-
-        # Learned projection from flattened covariance matrix to output_dim
         self.projection = nn.Linear(bilinear_dim ** 2, output_dim)
+
+        if train_backbone:
+            for param in self.backbone.parameters():
+                param.requires_grad = True
+        else:
+            for param in self.backbone.parameters():
+                param.requires_grad = False
 
     @staticmethod
     def _expand_conv_channels(conv):
@@ -158,6 +209,13 @@ class SoftCroppedSegmentEncoder(nn.Module):
             align_corners=False
         )  # (B, 1, Hf, Wf)
 
+        # Early-return for all-zero masks: the bilinear pool would otherwise compute
+        # proj_bilinear(all_zeros) = bias, then bias @ bias.T — non-zero noise with
+        # no image information. This guard makes the method self-contained safe and
+        # ensures the caller does not need to pre-check for empty segments.
+        if (mask == 0).all():
+            return torch.zeros(B, self.bilinear_dim ** 2, device=feature_maps.device)
+
         # Flatten spatial dims → sequence format
         f = feature_maps.view(B, D, -1).permute(0, 2, 1)  # (B, N, D)
         m = mask.view(B, -1, 1)                            # (B, N, 1)
@@ -187,15 +245,23 @@ class SoftCroppedSegmentEncoder(nn.Module):
 
     def forward(self, image, soft_mask):
         """
-        image     : (B, 3, H, W)
-        soft_mask : (B, H, W)  values in [0, 1], one soft mask per segment
-        Returns   : (B, output_dim)
-        """
-        # Option A: soft mask as 4th input channel — backbone sees where the
-        # segment is and can condition its representations accordingly
-        x = torch.cat([image, soft_mask.unsqueeze(1)], dim=1)  # (B, 4, H, W)
+        Parameters
+        ----------
+        image : torch.Tensor
+            (B, 3, H, W)
+        soft_mask : torch.Tensor
+            (B, H, W)  values in [0, 1], one soft mask per segment
 
-        # Unified call — returns (B, D, H', W') for all three backbone types
+        Returns
+        -------
+        torch.Tensor
+            (B, output_dim)
+        """
+        if self.feed_mask_to_backbone:
+            x = torch.cat([image, soft_mask.unsqueeze(1)], dim=1)  # (B, 4, H, W)
+        else:
+            x = image  # (B, 3, H, W) — backbone never sees the mask
+
         feature_maps = self.backbone(x)
 
         # Option C + bilinear: masked second-order aggregation

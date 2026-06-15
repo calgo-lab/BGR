@@ -421,7 +421,7 @@ class SoilNet_NoGeoTemp_LSTM(nn.Module):
             processed_depth_markers = true_padded_depths # Use ground_truth
         else:
             processed_depth_markers = depth_markers # Use predicted depths if not training
-        
+
         if self.segment_encoding_mode != "softcropping":
             # Crop image to segments
             segments = extract_segments(padded_image, image_mask, processed_depth_markers,
@@ -450,12 +450,32 @@ class SoilNet_NoGeoTemp_LSTM(nn.Module):
                 segment = segments[:, i, :, :, :]
                 segment_features = self.segment_encoder(segment)
             elif self.segment_encoding_mode == "softcropping":
-                segment_mask = segment_masks[:, i, :, :].unsqueeze(1) # (B, 1, H, W)
-                segment_features = self.segment_encoder(padded_image, segment_mask) #TEST
+                segment_mask = segment_masks[:, i, :, :].unsqueeze(1)  # (B, 1, H, W)
+                # Per-sample mask check — segment_mask.sum() would sum over batch too,
+                # incorrectly triggering the empty guard when only one sample has an
+                # empty mask at this segment position. Sum over spatial dims only.
+                mask_sum_per_sample = segment_mask.sum(dim=[2, 3])     # (B,)
+                # Only produce zero features if ALL samples in the batch have an
+                # empty mask at this position. Otherwise encode only the valid samples.
+                if (mask_sum_per_sample == 0).all():
+                    segment_features = torch.zeros(
+                        batch_size, self.segment_encoder_output_dim, device=padded_image.device
+                    )
+                else:
+                    valid_mask = mask_sum_per_sample > 0               # (B,) bool
+                    # Pre-allocate zeros, then fill in only the valid positions.
+                    # This keeps segment_features shape consistent: (B, output_dim) for
+                    # all samples, regardless of how many have valid masks.
+                    segment_features = torch.zeros(
+                        batch_size, self.segment_encoder_output_dim, device=padded_image.device
+                    )
+                    segment_features[valid_mask] = self.segment_encoder(
+                        padded_image[valid_mask], segment_mask[valid_mask]
+                    )
             segment_features_list.append(segment_features)
-            
+
         segment_features = torch.stack(segment_features_list, dim=1)
-        
+
         # Pass through LSTM predictors
         tabular_predictions = {}
         for key, predictor in self.tabular_predictors.items():
@@ -463,13 +483,10 @@ class SoilNet_NoGeoTemp_LSTM(nn.Module):
         
         ### TASK 3: Compute horizon embedding from the final concatenated vector
         if teacher_forcing_decision and true_tabular_features is not None:
-            # Use ground truth tabular features if available
             processed_tabular_features = true_tabular_features.view(batch_size, num_segments, -1)
         else:
-            # Use predicted tabular features
             processed_tabular_features = torch.cat([tabular_predictions[key] for key in self.tabular_predictors.keys()], dim=-1)
         
-        # Extra MLP for the tabular predictions before entering the horizon predictor
         true_tabular_features = self.segments_tabular_encoder(processed_tabular_features)
         
         # Concatenate segment features with tabular features
@@ -479,7 +496,7 @@ class SoilNet_NoGeoTemp_LSTM(nn.Module):
         segment_tabular_features = segment_tabular_features.view(batch_size * num_segments, -1)
         
         # Compute the horizon embeddings
-        # Embeddings are returned all at once (for each sample)   
+        # Embeddings are returned all at once (for each sample)
         horizon_embeddings = self.horizon_embedder(segment_tabular_features, num_segments)
         
         return depth_markers, tabular_predictions, horizon_embeddings
