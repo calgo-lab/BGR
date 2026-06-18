@@ -24,6 +24,7 @@ from .end2end.end2end_lstm import End2EndLSTM
 from .end2end.end2end_lstm_resnet import End2EndLSTMResNet
 from .end2end.end2end_lstm_resnet_embed_nogeotemps import End2EndLSTMResNetEmbed_NoGeoTemps
 from .end2end.end2end_sam_embed_nogeotemps import End2EndSAMEmbed_NoGeoTemps
+from .end2end.end2end_softcrop_nogeotemps import End2EndSoftcropNoGeoTemp
 
 def get_experiment(experiment_type, training_args, target, dataprocessor) -> Experiment:    
     if experiment_type == "simple_depths_geotmp":
@@ -76,6 +77,8 @@ def get_experiment(experiment_type, training_args, target, dataprocessor) -> Exp
         return End2EndLSTMResNetEmbed_NoGeoTemps(training_args, target, dataprocessor)
     elif experiment_type == "end2end_sam_embed_nogeotemps":
         return End2EndSAMEmbed_NoGeoTemps(training_args, target, dataprocessor)
+    elif experiment_type == "end2end_softcrop_nogeotemps":
+        return End2EndSoftcropNoGeoTemp(training_args, target, dataprocessor)
     else:
         raise ValueError(f"Unknown experiment type: {experiment_type}")
     
@@ -130,5 +133,7 @@ def get_experiment_hyperparameters(experiment_type) -> dict:
         return End2EndLSTMResNetEmbed_NoGeoTemps.get_experiment_hyperparameters()
     elif experiment_type == "end2end_sam_embed_nogeotemps":
         return End2EndSAMEmbed_NoGeoTemps.get_experiment_hyperparameters()
+    elif experiment_type == "end2end_softcrop_nogeotemps":
+        return End2EndSoftcropNoGeoTemp.get_experiment_hyperparameters()
     else:
         raise ValueError(f"Unknown experiment type: {experiment_type}")
