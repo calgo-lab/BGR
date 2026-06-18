@@ -464,28 +464,23 @@ class SoilNet_NoGeoTemp_LSTM(nn.Module):
                 segment = segments[:, i, :, :, :]
                 segment_features = self.segment_encoder(segment)
             elif self.segment_encoding_mode == "softcropping":
-                segment_mask = segment_masks[:, i, :, :].unsqueeze(1)  # (B, 1, H, W)
-                # Per-sample mask check — segment_mask.sum() would sum over batch too,
-                # incorrectly triggering the empty guard when only one sample has an
-                # empty mask at this segment position. Sum over spatial dims only.
-                mask_sum_per_sample = segment_mask.sum(dim=[2, 3])     # (B,)
-                # Only produce zero features if ALL samples in the batch have an
-                # empty mask at this position. Otherwise encode only the valid samples.
+                segment_mask = segment_masks[:, i, :, :]  # (B, H, W) - no unsqueeze
+                mask_sum_per_sample = segment_mask.sum(dim=[1, 2])  # (B,) - sum over H, W
+                
                 if (mask_sum_per_sample == 0).all():
                     segment_features = torch.zeros(
                         batch_size, self.segment_encoder_output_dim, device=padded_image.device
                     )
                 else:
-                    valid_mask = mask_sum_per_sample > 0               # (B,) bool
-                    # Pre-allocate zeros, then fill in only the valid positions.
-                    # This keeps segment_features shape consistent: (B, output_dim) for
-                    # all samples, regardless of how many have valid masks.
+                    valid_mask = mask_sum_per_sample > 0  # (B,) bool
                     segment_features = torch.zeros(
                         batch_size, self.segment_encoder_output_dim, device=padded_image.device
                     )
-                    segment_features[valid_mask] = self.segment_encoder(
-                        padded_image[valid_mask], segment_mask[valid_mask]
-                    )
+                    # Extract valid images and masks BEFORE passing to encoder
+                    # to avoid shape issues with boolean indexing on 4D tensors
+                    valid_images = padded_image[valid_mask]   # (valid_count, 3, H, W)
+                    valid_masks = segment_mask[valid_mask]    # (valid_count, H, W)
+                    segment_features[valid_mask] = self.segment_encoder(valid_images, valid_masks)
             segment_features_list.append(segment_features)
 
         segment_features = torch.stack(segment_features_list, dim=1)

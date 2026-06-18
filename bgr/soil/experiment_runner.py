@@ -205,6 +205,9 @@ class ExperimentRunner:
         """
         Run single experiment with specific seed. Used by seed ensemble.
 
+        Uses the same data splits (train/val/test) as the parent experiment,
+        only the model random seed changes for variance estimation.
+
         Args:
             training_args: Training arguments.
             model_output_base: Base output directory for ensemble.
@@ -218,12 +221,6 @@ class ExperimentRunner:
         seed_dir = os.path.join(model_output_base, f"seed_{seed}")
         os.makedirs(seed_dir, exist_ok=True)
 
-        train_data, val_data, test_data = self.dataprocessor.multi_label_stratified_shuffle_split(
-            self.dataprocessor.data,
-            train_val_test_frac=training_args.train_val_test_frac,
-            random_state=seed
-        )
-
         self._set_seed(seed)
 
         exp_training_args = TrainingArgs.create_from_args(training_args)
@@ -236,11 +233,11 @@ class ExperimentRunner:
         wandb.config.update(training_args.__dict__)
 
         try:
-            model, epoch_metrics = experiment.train_and_validate(train_data, val_data, seed_dir)
+            model, epoch_metrics = experiment.train_and_validate(self.train_data, self.val_data, seed_dir)
 
             self._save_model(model, seed_dir)
 
-            test_metrics = experiment.test(model, test_data, seed_dir, self.wandb_plot_logging)
+            test_metrics = experiment.test(model, self.test_data, seed_dir, self.wandb_plot_logging)
             if wandb.run is not None:
                 wandb.log(test_metrics)
 

@@ -10,13 +10,13 @@ if TYPE_CHECKING:
     from bgr.soil.training_args import TrainingArgs
 
 from bgr.soil.experiments.end2end.end2end_lstm_resnet_embed_nogeotemps import (
-    End2EndLSTMResNetEmbed_NoGeoTemp
+    End2EndLSTMResNetEmbed_NoGeoTemps
 )
 
 logger = logging.getLogger(__name__)
 
 
-class End2EndSoftcropNoGeoTemp(End2EndLSTMResNetEmbed_NoGeoTemp):
+class End2EndSoftcropNoGeoTemp(End2EndLSTMResNetEmbed_NoGeoTemps):
     """
     No-geotemp end-to-end SoilNet experiment using softcropping with SoftCroppedSegmentEncoder.
 
@@ -55,7 +55,7 @@ class End2EndSoftcropNoGeoTemp(End2EndLSTMResNetEmbed_NoGeoTemp):
             tab_rnn_hidden_dim=h.get('tab_rnn_hidden_dim', 1024),
             tab_num_lstm_layers=h.get('tab_num_lstm_layers', 2),
             segments_tabular_output_dim=h.get('segments_tabular_output_dim', 256),
-            embedding_dim=self.label_embeddings_tensor.size(0),
+            embedding_dim=self.label_embeddings_tensor.size(1),
             teacher_forcing_stop_epoch=h.get('teacher_forcing_stop_epoch', 5),
             teacher_forcing_approach=h.get('teacher_forcing_approach', 'linear'),
         )
@@ -85,7 +85,7 @@ class End2EndSoftcropNoGeoTemp(End2EndLSTMResNetEmbed_NoGeoTemp):
 
     @staticmethod
     def get_experiment_hyperparameters() -> dict:
-        base_h = End2EndLSTMResNetEmbed_NoGeoTemp.get_experiment_hyperparameters()
+        base_h = End2EndLSTMResNetEmbed_NoGeoTemps.get_experiment_hyperparameters()
 
         softcrop_h = {
             'segment_encoding_mode': 'softcropping',
