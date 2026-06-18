@@ -10,6 +10,7 @@ import torchvision.transforms as transforms
 import matplotlib.pyplot as plt
 import os
 import wandb
+from bgr.soil.experiments._base import _safe_wandb_log
 from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
 from tabulate import tabulate
 from typing import TYPE_CHECKING
@@ -140,7 +141,7 @@ class SimpleTabularsGeotempsResNet(Experiment):
                 callback(model, epoch_metrics, epoch)
             
             # Log metrics to wandb
-            wandb.log(epoch_metrics)
+            _safe_wandb_log(epoch_metrics)
             scheduler.step(total_val_loss)
             
             # Log the current learning rate
@@ -275,7 +276,7 @@ class SimpleTabularsGeotempsResNet(Experiment):
 
         # Optionally log the plot to wandb
         if wandb_image_logging:
-            wandb.log({"Training Losses": wandb.Image(fig)})
+            _safe_wandb_log({"Training Losses": wandb.Image(fig)})
 
         plt.close(fig)
         
@@ -306,7 +307,7 @@ class SimpleTabularsGeotempsResNet(Experiment):
 
             # Optionally log the plot to wandb
             if wandb_image_logging:
-                wandb.log({f"Stones Predictions ({split.capitalize()})": wandb.Image(fig)})
+                _safe_wandb_log({f"Stones Predictions ({split.capitalize()})": wandb.Image(fig)})
 
             plt.close()
     

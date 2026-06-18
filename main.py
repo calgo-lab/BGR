@@ -71,6 +71,14 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument('--early_stopping_patience', type=int, default=5)
     parser.add_argument('--early_stopping_min_delta', type=float, default=1e-4)
     
+    # seed ensemble parameters
+    parser.add_argument('--seed_ensemble_size', type=int, default=1,
+        help='Number of seeds in ensemble. 1 = single run (backward compatible). Default: 1')
+    parser.add_argument('--seed_start', type=int, default=2025,
+        help='Starting seed for ensemble. Seeds: seed_start, seed_start+1, ... Default: 2025')
+    parser.add_argument('--seed_list', type=str, default=None,
+        help='Comma-separated specific seeds (overrides seed_ensemble_size and seed_start). Example: 42,123,456')
+    
     # hpo-related parameters
     
     return parser
@@ -151,8 +159,53 @@ def main(args : argparse.Namespace):
         # Run inference on the test data using a pre-trained model
         # TODO: Will probably not work because of hyperparameters
         test_metrics = experimenter.run_inference(training_args, args.inference_model_file, args.model_output_dir, timestamp, wandb_offline=args.wandb_offline)
+    elif args.seed_ensemble_size > 1:
+        # Seed ensemble mode: run with multiple seeds
+        from bgr.soil.seed_ensemble_summary import (
+            save_ensemble_summary,
+            plot_ensemble_training_curves,
+            extract_backward_compat_metrics
+        )
+
+        if args.seed_list:
+            seeds = [int(s.strip()) for s in args.seed_list.split(',')]
+        else:
+            seeds = list(range(args.seed_start, args.seed_start + args.seed_ensemble_size))
+
+        model_output_base = f"model_output/{args.experiment_type}_ensemble_{len(seeds)}seeds_{timestamp}"
+        Path(model_output_base).mkdir(parents=True, exist_ok=True)
+
+        print(f"Running seed ensemble with {len(seeds)} seeds: {seeds}")
+
+        all_results = []
+        for seed in seeds:
+            print(f"\n--- Running seed {seed} ---")
+            result = experimenter.run_with_seed(
+                training_args, model_output_base, timestamp, seed, wandb_offline=args.wandb_offline
+            )
+            all_results.append(result)
+
+        print(f"\n--- Aggregating results from {len(seeds)} seeds ---")
+        aggregated = experimenter._aggregate_metrics(all_results)
+
+        save_ensemble_summary(
+            aggregated, model_output_base, all_results,
+            experiment_type=args.experiment_type, n_seeds=len(seeds)
+        )
+
+        if aggregated.get('history_mean'):
+            plot_ensemble_training_curves(
+                aggregated['history_mean'],
+                model_output_base,
+                wandb_log=True,
+                group_name=f"{args.experiment_type}_ensemble"
+            )
+
+        experimenter._log_ensemble_summary_to_wandb(aggregated, f"{args.experiment_type}_ensemble")
+
+        metrics = extract_backward_compat_metrics(aggregated)
     else:
-        # Train, validate and test the model according to the model arguments
+        # Original single-run mode (backward compatible)
         metrics = experimenter.run_train_val_test(training_args, args.model_output_dir, timestamp, wandb_offline=args.wandb_offline)
 
 def read_and_handle_args():

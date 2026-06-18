@@ -11,6 +11,7 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import wandb
+from bgr.soil.experiments._base import _safe_wandb_log
 from sklearn.metrics import f1_score, precision_score, recall_score
 from typing import TYPE_CHECKING
 
@@ -147,7 +148,7 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLPHybridLoss(E
                 callback(model, epoch_metrics, epoch)
             
             # Log metrics to wandb
-            wandb.log(epoch_metrics)
+            _safe_wandb_log(epoch_metrics)
             
             # Apply the scheduler with validation loss
             scheduler.step(avg_val_loss)
@@ -347,7 +348,7 @@ class SimpleHorizonClassificationWithLSTMEmbeddingsGeotempsMLPTabMLPHybridLoss(E
         
         plt.savefig(f'{model_output_dir}/losses_and_accuracies.pdf', bbox_inches='tight', format='pdf')
         if wandb_image_logging:
-            wandb.log({"Losses and Accuracies": wandb.Image(figure)})
+            _safe_wandb_log({"Losses and Accuracies": wandb.Image(figure)})
         
         # Plot confusion matrices
         self._plot_confusion_matrices(labels=self.labels['train'], predictions=self.predictions['train'], emb_dict=self.dataprocessor.embeddings_dict, model_output_dir=model_output_dir, wandb_image_logging=wandb_image_logging, mode='train')

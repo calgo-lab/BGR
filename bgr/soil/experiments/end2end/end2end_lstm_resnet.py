@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 from bgr.soil.utils import pad_tensor
 from bgr.soil.modelling.soilnet import SoilNet_LSTM
 from bgr.soil.data.horizon_tabular_data import HorizonDataProcessor
-from bgr.soil.experiments._base import Experiment
+from bgr.soil.experiments._base import Experiment, _safe_wandb_log
 from bgr.soil.modelling.tabulars.tabular_models import SimpleTabularModel
 from bgr.soil.metrics import DepthMarkerLoss, TopKHorizonAccuracy, depth_iou, top_k_accuracy, top_k_accuracy_from_indices, precision_recall_at_k
 from bgr.soil.data.datasets import ImageTabularEnd2EndDataset
@@ -120,6 +120,11 @@ class End2EndLSTMResNet(Experiment):
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, threshold=0.1, min_lr=lr*0.01)
         
         # Training and evaluation loop
+        # Reset stateful variables for clean runs (important for ensemble support)
+        self.stones_predictions = {"train": [], "val": [], "test": []}
+        self.stones_true_values = {"train": [], "val": [], "test": []}
+        self.hor_labels = {'train': None, 'val': None, 'test': None}
+        self.hor_predictions = {'train': None, 'val': None, 'test': None}
         self.histories = []
         for epoch in range(1, self.training_args.num_epochs + 1):
             print("--------------------------------")
@@ -163,7 +168,7 @@ class End2EndLSTMResNet(Experiment):
                 callback(model, epoch_metrics, epoch)
             
             # Log metrics to wandb
-            wandb.log(epoch_metrics)
+            _safe_wandb_log(epoch_metrics)
             scheduler.step(total_val_loss)
             
             # Log the current learning rate
@@ -375,7 +380,7 @@ class End2EndLSTMResNet(Experiment):
 
         # Optionally log the plot to wandb
         if wandb_image_logging:
-            wandb.log({"Training Losses": wandb.Image(fig)})
+            _safe_wandb_log({"Training Losses": wandb.Image(fig)})
         plt.close(fig)
         
         ### Plot extra metrics
@@ -403,7 +408,7 @@ class End2EndLSTMResNet(Experiment):
 
         # Optionally log the plot to wandb
         if wandb_image_logging:
-            wandb.log({"Training Metrics": wandb.Image(fig)})
+            _safe_wandb_log({"Training Metrics": wandb.Image(fig)})
         plt.close(fig)
         
         ### Plot the bisector line for stones predictions
@@ -433,7 +438,7 @@ class End2EndLSTMResNet(Experiment):
 
             # Optionally log the plot to wandb
             if wandb_image_logging:
-                wandb.log({f"Stones Predictions ({split.capitalize()})": wandb.Image(fig)})
+                _safe_wandb_log({f"Stones Predictions ({split.capitalize()})": wandb.Image(fig)})
 
             plt.close()
 

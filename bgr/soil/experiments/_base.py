@@ -15,6 +15,16 @@ if TYPE_CHECKING:
     from bgr.soil.training_args import TrainingArgs
     from bgr.soil.data.horizon_tabular_data import HorizonDataProcessor
 
+
+def _safe_wandb_log(metrics: dict) -> None:
+    """Safely log to wandb if a run is active."""
+    try:
+        if wandb.run is not None:
+            wandb.log(metrics)
+    except Exception:
+        pass
+
+
 class Experiment(ABC):
     
     @abstractmethod
@@ -91,7 +101,7 @@ class Experiment(ABC):
             plt.savefig(cm_path, bbox_inches='tight', format='pdf')        
             
             # Log to Weights & Biases if enabled
-            if wandb_image_logging:
+            if wandb_image_logging and wandb.run is not None:
                 wandb.log({f"Confusion matrix {mode} {agg_level}": wandb.Image(fig)})
             
             plt.close(fig)

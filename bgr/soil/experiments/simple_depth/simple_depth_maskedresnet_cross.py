@@ -8,6 +8,7 @@ from tqdm import tqdm
 import torchvision.transforms as transforms
 import matplotlib.pyplot as plt
 import wandb
+from bgr.soil.experiments._base import _safe_wandb_log
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -97,7 +98,7 @@ class SimpleDepthsMaskedResNetCrossAttention(Experiment):
                 callback(model, epoch_metrics, epoch)
                 
             # Log metrics to wandb
-            wandb.log(epoch_metrics)
+            _safe_wandb_log(epoch_metrics)
             
             # Apply the scheduler with validation loss
             scheduler.step(avg_val_loss)
@@ -229,7 +230,7 @@ class SimpleDepthsMaskedResNetCrossAttention(Experiment):
         
         plt.savefig(f'{model_output_dir}/losses_and_iou_scores.pdf', bbox_inches='tight', format='pdf')
         if wandb_image_logging:
-            wandb.log({"Losses and IoU Scores": wandb.Image(figure)})
+            _safe_wandb_log({"Losses and IoU Scores": wandb.Image(figure)})
     
     def _train_model(self, train_loader, device, model, optimizer):
         train_loss_total = 0.0
