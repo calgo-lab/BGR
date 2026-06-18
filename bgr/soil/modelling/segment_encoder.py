@@ -67,7 +67,7 @@ class SoftCroppedSegmentEncoder(nn.Module):
         output_dim: int = 512,
         bilinear_dim: int = 128,
         train_backbone: bool = False,
-        feed_mask_to_backbone: bool = True,
+        feed_mask_to_backbone: bool = False,
     ):
         """
         Parameters

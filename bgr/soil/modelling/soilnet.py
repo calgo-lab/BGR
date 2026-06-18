@@ -264,11 +264,15 @@ class SoilNet_NoGeoTemp_LSTM(nn.Module):
         img_patch_size : int = 512,  # may be different from segment patch sizes below
         
         # Parameters for segment encoding:
-        segment_encoding_mode : Literal["random_patches", "patch_cnn", "softcropping"] = "random_patches", # currently used for both img and seg encoders
-        num_patches_per_segment : int = 8, # number of patches per segment (only used if segments_random_patches is True)
-        segment_random_patch_size : int = 224, # size of the random patches (only used if segments_random_patches is True)
-        patch_cnn_segment_size : int = 512, # size of the patches for the PatchCNN segment encoder (only used if segments_random_patches is False)
+        segment_encoding_mode : Literal["random_patches", "patch_cnn", "softcropping"] = "random_patches",
+        num_patches_per_segment : int = 8, # number of patches per segment (only used if segment_encoding_mode is "random_patches")
+        segment_random_patch_size : int = 224, # size of the random patches (only used if segment_encoding_mode is "random_patches")
+        patch_cnn_segment_size : int = 512, # size of the patches for the PatchCNN segment encoder (only used if segment_encoding_mode is "patch_cnn")
         segment_encoder_output_dim : int = 512,
+        segment_encoder_backbone : str = 'resnet18', # backbone for the softcropping segment encoder (only used if segment_encoding_mode is "softcropping")
+        segment_encoder_train_backbone : bool = False, # whether to train the backbone of the softcropping segment encoder (only used if segment_encoding_mode is "softcropping")
+        segment_encoder_feed_mask_to_backbone : bool = False, # whether to feed the segment masks to the backbone of the softcropping segment encoder (only used if segment_encoding_mode is "softcropping")
+        
 
         # Parameters for tabular predictors:
         tabular_output_dim_dict : dict[str, int] = {}, # name_tabular: output_dim
@@ -308,6 +312,9 @@ class SoilNet_NoGeoTemp_LSTM(nn.Module):
         self.segment_random_patch_size = segment_random_patch_size
         self.patch_cnn_segment_size = patch_cnn_segment_size
         self.segment_encoder_output_dim = segment_encoder_output_dim
+        self.segment_encoder_backbone = segment_encoder_backbone
+        self.segment_encoder_train_backbone = segment_encoder_train_backbone
+        self.segment_encoder_feed_mask_to_backbone = segment_encoder_feed_mask_to_backbone
         
         self.tabular_output_dim_dict = tabular_output_dim_dict
         self.tab_rnn_hidden_dim = tab_rnn_hidden_dim
@@ -324,7 +331,14 @@ class SoilNet_NoGeoTemp_LSTM(nn.Module):
         elif self.segment_encoding_mode == "patch_cnn":
             self.segment_encoder = PatchCNNEncoder(patch_size=patch_cnn_segment_size, patch_stride=patch_cnn_segment_size, output_dim=segment_encoder_output_dim)
         elif self.segment_encoding_mode == "softcropping":
-            self.segment_encoder = SoftCroppedSegmentEncoder(backbone='resnet18', pretrained=True, output_dim=self.segment_encoder_output_dim, bilinear_dim=self.segment_encoder_output_dim)
+            self.segment_encoder = SoftCroppedSegmentEncoder(
+                backbone=self.segment_encoder_backbone,
+                pretrained=True,
+                output_dim=self.segment_encoder_output_dim,
+                bilinear_dim=self.segment_encoder_output_dim,
+                train_backbone=self.segment_encoder_train_backbone,
+                feed_mask_to_backbone=self.segment_encoder_feed_mask_to_backbone
+            )
         else:
             raise ValueError(f"Unsupported segment encoding mode: {self.segment_encoding_mode}")
         
