@@ -153,21 +153,6 @@ class ExperimentRunner:
             "seed": self.seed
         })
     
-    def _set_seed(self, seed : int) -> None:
-        """
-        Sets the seed for the random number generators in numpy and torch.
-
-        Args:
-            seed (int): The seed for the random number generators.
-        """
-        
-        torch.manual_seed(seed)
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-        np.random.seed(seed)
-    
     def _load_model(self, model_file_path: str, model: nn.Module) -> nn.Module:
         """
         Loads the model from the model_file_path and returns the model.
@@ -381,23 +366,32 @@ class ExperimentRunner:
 
             from bgr.soil.seed_ensemble_summary import create_ensemble_summary_figure
 
+            available_metrics = _get_available_summary_metrics(aggregated)
+            n_seeds = len(available_metrics)
+
+            if hasattr(self, 'experiment_type'):
+                exp_type = self.experiment_type
+            else:
+                exp_type = 'Experiment'
+
             fig = create_ensemble_summary_figure(
                 aggregated,
-                self.experiment_type,
-                n_seeds=aggregated.get('test_Horizon_accuracy_n', 0)
+                exp_type,
+                n_seeds=n_seeds
             )
             wandb.log({'ensemble_summary_plot': wandb.Image(fig)})
             plt.close(fig)
 
-            for key in ['test_Horizon_accuracy', 'test_Horizon_topk_accuracy',
-                        'test_Depth_IoU', 'val_loss']:
+            # Use dynamic metric detection
+            for key in available_metrics:
                 mean_key = f'{key}_mean'
                 std_key = f'{key}_std'
+                n_key = f'{key}_n'
                 if mean_key in aggregated:
                     wandb.summary[f'ensemble_{key}'] = {
                         'mean': aggregated.get(mean_key),
                         'std': aggregated.get(std_key),
-                        'n': aggregated.get(f'{key}_n', 0)
+                        'n': aggregated.get(n_key, 0)
                     }
         except Exception:
             pass
@@ -583,6 +577,41 @@ def _init_wandb_for_worker(
     })
 
 
+def _get_available_summary_metrics(aggregated: dict) -> list:
+    """
+    Dynamically detect available metrics from aggregated dict.
+    
+    Filters for metrics that have both _mean and _std values.
+    Prioritizes common metrics (accuracy, IoU, loss) but includes any metric.
+    
+    Args:
+        aggregated: Aggregated metrics dict with _mean and _std values
+        
+    Returns:
+        List of metric base names that have both mean and std
+    """
+    metric_names = set()
+    for key in aggregated.keys():
+        if key.endswith('_mean'):
+            base = key[:-5]  # Remove '_mean'
+            std_key = f'{base}_std'
+            if std_key in aggregated:
+                metric_names.add(base)
+    
+    # Priority order for display
+    priority_patterns = ['accuracy', 'iou', 'f1', 'loss', 'precision', 'recall']
+    priority_metrics = []
+    other_metrics = []
+    
+    for m in sorted(metric_names):
+        if any(p in m.lower() for p in priority_patterns):
+            priority_metrics.append(m)
+        else:
+            other_metrics.append(m)
+    
+    return priority_metrics + sorted(other_metrics)
+
+
 def create_summary_run(
     aggregated: dict,
     experiment_type: str,
@@ -613,16 +642,11 @@ def create_summary_run(
 
     wandb.config.update({'n_seeds': n_seeds, 'experiment_type': experiment_type})
 
-    key_metrics = [
-        'test_Horizon_accuracy',
-        'test_Horizon_topk_accuracy',
-        'test_Depth_IoU',
-        'test_Bodenart_accuracy',
-        'val_loss',
-    ]
+    # Dynamically detect available metrics
+    available_metrics = _get_available_summary_metrics(aggregated)
 
     summary_data = {}
-    for key in key_metrics:
+    for key in available_metrics:
         mean_key = f'{key}_mean'
         std_key = f'{key}_std'
         if mean_key in aggregated:
@@ -632,15 +656,16 @@ def create_summary_run(
     if summary_data:
         wandb.summary.update(summary_data)
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(10, max(6, len(available_metrics) * 0.8)))
 
     valid_metrics = []
-    for key in key_metrics:
+    for key in available_metrics:
         mean_key = f'{key}_mean'
         std_key = f'{key}_std'
         if mean_key in aggregated:
+            display_name = key.replace('test_', 'Test ').replace('val_', 'Val ').replace('_', ' ').title()
             valid_metrics.append((
-                key.replace('test_', '').replace('_', ' ').title(),
+                display_name,
                 aggregated[mean_key],
                 aggregated.get(std_key, 0)
             ))

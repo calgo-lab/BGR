@@ -15,6 +15,66 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
+def _get_available_metrics_for_figure(aggregated: dict) -> list:
+    """
+    Dynamically detect available metrics from aggregated dict for figure plotting.
+    
+    Args:
+        aggregated: Aggregated metrics dict with _mean and _std values
+        
+    Returns:
+        List of tuples (key, display_title) for available metrics
+    """
+    metric_names = set()
+    for key in aggregated.keys():
+        if key.endswith('_mean'):
+            base = key[:-5]
+            std_key = f'{base}_std'
+            if std_key in aggregated:
+                metric_names.add(base)
+    
+    priority_patterns = [
+        ('accuracy', 'Accuracy'),
+        ('iou', 'IoU'),
+        ('f1', 'F1'),
+        ('loss', 'Loss'),
+        ('precision', 'Precision'),
+        ('recall', 'Recall'),
+    ]
+    
+    display_map = {
+        'test_Horizon_accuracy': 'Test Horizon Acc',
+        'train_Horizon_accuracy': 'Train Horizon Acc',
+        'val_Horizon_accuracy': 'Val Horizon Acc',
+        'test_Horizon_topk_accuracy': 'Test Horizon Top-5',
+        'val_Horizon_topk_accuracy': 'Val Horizon Top-5',
+        'test_Depth_IoU': 'Test Depth IoU',
+        'val_Depth_IoU': 'Val Depth IoU',
+        'test_Bodenart_accuracy': 'Test Bodenart Acc',
+        'val_Bodenart_accuracy': 'Val Bodenart Acc',
+        'test_Magnitude_accuracy': 'Test Magnitude Acc',
+        'val_Magnitude_accuracy': 'Val Magnitude Acc',
+        'test_loss': 'Test Loss',
+        'val_loss': 'Val Loss',
+        'train_loss': 'Train Loss',
+    }
+    
+    priority_metrics = []
+    other_metrics = []
+    
+    for m in sorted(metric_names):
+        matched = False
+        for pattern, display in priority_patterns:
+            if pattern in m.lower():
+                priority_metrics.append((m, display_map.get(m, m.replace('_', ' ').title())))
+                matched = True
+                break
+        if not matched:
+            other_metrics.append((m, display_map.get(m, m.replace('_', ' ').title())))
+    
+    return priority_metrics + other_metrics
+
+
 def save_ensemble_summary(
     aggregated: dict,
     output_dir: str,
@@ -276,23 +336,17 @@ def create_ensemble_summary_figure(
     Returns:
         Matplotlib Figure
     """
-    key_metrics = [
-        ('test_Horizon_accuracy', 'Horizon Accuracy'),
-        ('test_Horizon_topk_accuracy', 'Horizon Top-5 Acc'),
-        ('test_Depth_IoU', 'Depth IoU'),
-        ('test_Bodenart_accuracy', 'Bodenart Acc'),
-        ('val_loss', 'Val Loss'),
-    ]
+    available_metrics = _get_available_metrics_for_figure(aggregated)
 
     valid_metrics = []
-    for key, title in key_metrics:
+    for key, display_name in available_metrics:
         mean_key = f'{key}_mean'
         std_key = f'{key}_std'
         if mean_key in aggregated and std_key in aggregated:
             mean_val = aggregated.get(mean_key)
             std_val = aggregated.get(std_key, 0)
             if mean_val is not None and isinstance(mean_val, (int, float, np.integer, np.floating)):
-                valid_metrics.append((key, title, mean_val, std_val))
+                valid_metrics.append((key, display_name, mean_val, std_val))
 
     if not valid_metrics:
         fig, ax = plt.subplots(figsize=(6, 4))
