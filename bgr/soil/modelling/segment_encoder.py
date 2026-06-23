@@ -33,7 +33,7 @@ class DINOv2SpatialBackbone(nn.Module):
         self.patch_size = dino_model.patch_size
 
     def forward(self, x):
-        B, _, H, W = x.shape
+        B, C, H, W = x.shape
 
         H_padded = ((H + self.patch_size - 1) // self.patch_size) * self.patch_size
         W_padded = ((W + self.patch_size - 1) // self.patch_size) * self.patch_size
@@ -43,14 +43,18 @@ class DINOv2SpatialBackbone(nn.Module):
                 f"Input image ({H}x{W}) is smaller than the patch size "
                 f"({self.patch_size}). DinoV2 requires H and W >= patch_size."
             )
-            rgb = x[:, :3]
-            rgb_padded = F.pad(rgb, (0, W_padded - W, 0, H_padded - H), mode='constant', value=0)
 
-            mask = x[:, 3:4]
-            mask_zeros = torch.zeros(B, 1, H_padded, W_padded, dtype=x.dtype, device=x.device)
-            mask_zeros[:, :, :H, :W] = mask
+            if C >= 4:
+                rgb = x[:, :3]
+                rgb_padded = F.pad(rgb, (0, W_padded - W, 0, H_padded - H), mode='constant', value=0)
 
-            x = torch.cat([rgb_padded, mask_zeros], dim=1)
+                mask = x[:, 3:4]
+                mask_zeros = torch.zeros(B, 1, H_padded, W_padded, dtype=x.dtype, device=x.device)
+                mask_zeros[:, :, :H, :W] = mask
+
+                x = torch.cat([rgb_padded, mask_zeros], dim=1)
+            else:
+                x = F.pad(x, (0, W_padded - W, 0, H_padded - H), mode='constant', value=0)
 
         out = self.dino.forward_features(x)
         tokens = out['x_norm_patchtokens']
