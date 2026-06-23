@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: bgr-project
-        image: vipin2310/bgr-python:3.9.21
+        image: vipin2310/bgr-python:3.11.15
         securityContext:
           runAsUser: 0
         ports:
@@ -25,7 +25,7 @@ spec:
             nvidia.com/gpu: 1
           limits:
             # memory: 200Gi
-            memory: 100Gi
+            memory: 250Gi
             nvidia.com/gpu: 1
         volumeMounts:
           - name: bgr-project-pvc
@@ -36,7 +36,7 @@ spec:
             mountPath: /dev/shm
       nodeSelector:
         # kubernetes.io/hostname: cl-worker24
-        gpu: h200
+        gpu: h100
       volumes:
         - name: bgr-project-pvc
           persistentVolumeClaim:
