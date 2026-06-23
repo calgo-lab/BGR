@@ -78,6 +78,10 @@ def create_parser() -> argparse.ArgumentParser:
         help='Starting seed for ensemble. Seeds: seed_start, seed_start+1, ... Default: 2025')
     parser.add_argument('--seed_list', type=str, default=None,
         help='Comma-separated specific seeds (overrides seed_ensemble_size and seed_start). Example: 42,123,456')
+    parser.add_argument('--gpus', type=str, default=None,
+        help='Comma-separated GPU IDs for parallel execution, e.g., "0,1,2,3". Default: sequential execution')
+    parser.add_argument('--wandb_summary_run', action='store_true',
+        help='Create a separate wandb run with ensemble summary metrics (mean ± std) in a separate group')
     
     # hpo-related parameters
     
@@ -166,6 +170,7 @@ def main(args : argparse.Namespace):
             plot_ensemble_training_curves,
             extract_backward_compat_metrics
         )
+        from bgr.soil.experiment_runner import _run_seed_worker, create_summary_run
 
         if args.seed_list:
             seeds = [int(s.strip()) for s in args.seed_list.split(',')]
@@ -177,33 +182,131 @@ def main(args : argparse.Namespace):
 
         print(f"Running seed ensemble with {len(seeds)} seeds: {seeds}")
 
-        all_results = []
-        for seed in seeds:
-            print(f"\n--- Running seed {seed} ---")
-            result = experimenter.run_with_seed(
-                training_args, model_output_base, timestamp, seed, wandb_offline=args.wandb_offline
+        ensemble_group = f"{args.experiment_type}_ensemble_{timestamp}"
+        summary_group = f"{args.experiment_type}_ensemble_summary_{timestamp}"
+
+        if args.gpus:
+            # Parallel execution on multiple GPUs
+            import multiprocessing as mp
+            import wandb
+
+            gpu_list = [int(g.strip()) for g in args.gpus.split(',')]
+            
+            # Validate GPU availability
+            available_gpus = torch.cuda.device_count()
+            invalid_gpus = [g for g in gpu_list if g >= available_gpus]
+            if invalid_gpus:
+                print(f"WARNING: GPUs {invalid_gpus} not available. Available: {list(range(available_gpus))}")
+            
+            valid_gpus = [g for g in gpu_list if g < available_gpus]
+            
+            if not valid_gpus:
+                print("ERROR: No valid GPUs specified. Falling back to sequential execution.")
+                all_results = []
+                for seed in seeds:
+                    print(f"\n--- Running seed {seed} (sequential fallback) ---")
+                    result = experimenter.run_with_seed(
+                        training_args, model_output_base, timestamp, seed, wandb_offline=args.wandb_offline
+                    )
+                    all_results.append(result)
+                aggregated = experimenter._aggregate_metrics(all_results) if all_results else {}
+            else:
+                gpu_list = valid_gpus
+                print(f"Using GPUs: {gpu_list}")
+
+                # Set multiprocessing start method safely
+                try:
+                    mp.set_start_method('spawn')
+                except RuntimeError:
+                    pass  # Already set
+
+                worker_configs = []
+                for i, seed in enumerate(seeds):
+                    config = {
+                        'seed': seed,
+                        'gpu_id': gpu_list[i % len(gpu_list)],
+                        'train_df': train_data,
+                        'val_df': val_data,
+                        'test_df': test_data,
+                        'dataprocessor_state': {
+                            'embeddings_dict': dataprocessor.embeddings_dict,
+                            'category_maps': dataprocessor.category_maps,
+                            'tabulars_output_dim_dict': dataprocessor.tabulars_output_dim_dict,
+                            'geotemp_img_infos': dataprocessor.geotemp_img_infos,
+                        },
+                        'experiment_type': args.experiment_type,
+                        'training_args_dict': vars(training_args),
+                        'target': args.target,
+                        'timestamp': timestamp,
+                        'model_output_base': model_output_base,
+                        'wandb_offline': args.wandb_offline,
+                        'ensemble_group': ensemble_group,
+                        'wandb_project_name': args.wandb_project_name,
+                    }
+                    config['training_args_dict']['num_workers'] = 0
+                    worker_configs.append(config)
+
+                # Pool size = min(gpus, seeds) to avoid idle workers
+                pool_size = min(len(gpu_list), len(seeds))
+                print(f"Starting {pool_size} parallel workers (1 per GPU-seed pair)")
+                
+                with mp.Pool(pool_size) as pool:
+                    results = pool.map(_run_seed_worker, worker_configs)
+
+                successful = [r for r in results if r['status'] == 'success']
+                failed = [r for r in results if r['status'] != 'success']
+
+                if failed:
+                    print(f"\nWARNING: {len(failed)}/{len(seeds)} seeds failed or were skipped:")
+                    for r in failed:
+                        print(f"  - Seed {r['seed']}: {r['status']} - {r.get('error', 'Unknown error')}")
+
+                all_results = [r for r in successful if 'metrics' in r]
+                print(f"\n--- Aggregating results from {len(all_results)} successful seeds ---")
+
+                aggregated = experimenter._aggregate_metrics(all_results) if all_results else {}
+
+        else:
+            # Sequential execution (original behavior)
+            all_results = []
+            for seed in seeds:
+                print(f"\n--- Running seed {seed} ---")
+                result = experimenter.run_with_seed(
+                    training_args, model_output_base, timestamp, seed, wandb_offline=args.wandb_offline
+                )
+                all_results.append(result)
+
+            print(f"\n--- Aggregating results from {len(seeds)} seeds ---")
+            aggregated = experimenter._aggregate_metrics(all_results)
+
+        if aggregated:
+            save_ensemble_summary(
+                aggregated, model_output_base, all_results,
+                experiment_type=args.experiment_type, n_seeds=len(all_results)
             )
-            all_results.append(result)
 
-        print(f"\n--- Aggregating results from {len(seeds)} seeds ---")
-        aggregated = experimenter._aggregate_metrics(all_results)
+            if aggregated.get('history_mean'):
+                plot_ensemble_training_curves(
+                    aggregated['history_mean'],
+                    model_output_base,
+                    wandb_log=True,
+                    group_name=ensemble_group
+                )
 
-        save_ensemble_summary(
-            aggregated, model_output_base, all_results,
-            experiment_type=args.experiment_type, n_seeds=len(seeds)
-        )
+            if args.wandb_summary_run:
+                create_summary_run(
+                    aggregated,
+                    experiment_type=args.experiment_type,
+                    n_seeds=len(all_results),
+                    summary_group=summary_group,
+                    output_dir=model_output_base,
+                    wandb_offline=args.wandb_offline,
+                    wandb_project_name=args.wandb_project_name,
+                )
 
-        if aggregated.get('history_mean'):
-            plot_ensemble_training_curves(
-                aggregated['history_mean'],
-                model_output_base,
-                wandb_log=True,
-                group_name=f"{args.experiment_type}_ensemble"
-            )
-
-        experimenter._log_ensemble_summary_to_wandb(aggregated, f"{args.experiment_type}_ensemble")
-
-        metrics = extract_backward_compat_metrics(aggregated)
+            metrics = extract_backward_compat_metrics(aggregated)
+        else:
+            metrics = {}
     else:
         # Original single-run mode (backward compatible)
         metrics = experimenter.run_train_val_test(training_args, args.model_output_dir, timestamp, wandb_offline=args.wandb_offline)

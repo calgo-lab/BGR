@@ -379,7 +379,7 @@ class ExperimentRunner:
             if wandb.run is None:
                 return
 
-            from bgr.soil.ensemble_summary import create_ensemble_summary_figure
+            from bgr.soil.seed_ensemble_summary import create_ensemble_summary_figure
 
             fig = create_ensemble_summary_figure(
                 aggregated,
@@ -417,3 +417,250 @@ class ExperimentRunner:
             torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
+
+
+class MinimalDataProcessor:
+    """
+    Lightweight dataprocessor for multiprocessing workers.
+    Only holds the state needed for training - no file I/O.
+    """
+
+    def __init__(self, state: dict):
+        self.embeddings_dict = state['embeddings_dict']
+        self.category_maps = state['category_maps']
+        self.tabulars_output_dim_dict = state['tabulars_output_dim_dict']
+        self.geotemp_img_infos = state.get('geotemp_img_infos', [])
+
+
+def _run_seed_worker(cfg: dict) -> dict:
+    """
+    Worker function for a single seed. Module-level for multiprocessing pickling.
+
+    Args:
+        cfg: Dictionary containing all configuration for this worker:
+            - seed: Random seed
+            - gpu_id: GPU device ID
+            - train_df, val_df, test_df: DataFrames
+            - dataprocessor_state: Minimal state dict
+            - experiment_type, training_args_dict, target, timestamp
+            - model_output_base, wandb_offline, ensemble_group
+
+    Returns:
+        dict: Result with 'seed', 'status', 'metrics'/'error'
+    """
+    import gc
+    import traceback
+
+    try:
+        gpu_id = cfg['gpu_id']
+        if gpu_id >= torch.cuda.device_count():
+            raise ValueError(
+                f"GPU {gpu_id} not available. Only {torch.cuda.device_count()} GPUs found. "
+                f"Valid GPU IDs: {list(range(torch.cuda.device_count()))}"
+            )
+        torch.cuda.set_device(gpu_id)
+
+        training_args = TrainingArgs.create_from_dict(
+            cfg['training_args_dict'],
+            device=f'cuda:{gpu_id}'
+        )
+        training_args.callbacks = None
+
+        dataprocessor = MinimalDataProcessor(cfg['dataprocessor_state'])
+
+        experimenter = ExperimentRunner(
+            experiment_type=cfg['experiment_type'],
+            train_data=cfg['train_df'],
+            val_data=cfg['val_df'],
+            test_data=cfg['test_df'],
+            dataprocessor=dataprocessor,
+            target=cfg['target'],
+            wandb_project_name=cfg.get('wandb_project_name', 'BGR'),
+            seed=cfg['seed'],
+            wandb_plot_logging=cfg['training_args_dict'].get('wandb_plot_logging', False),
+        )
+
+        seed_dir = os.path.join(cfg['model_output_base'], f"seed_{cfg['seed']}")
+        os.makedirs(seed_dir, exist_ok=True)
+
+        _init_wandb_for_worker(
+            cfg['wandb_offline'],
+            seed_dir,
+            cfg['experiment_type'],
+            cfg['seed'],
+            cfg['timestamp'],
+            cfg['ensemble_group'],
+            cfg.get('wandb_project_name', 'BGR'),
+        )
+
+        try:
+            experimenter._set_seed(cfg['seed'])
+
+            exp_training_args = TrainingArgs.create_from_dict(
+                cfg['training_args_dict'],
+                device=f'cuda:{gpu_id}'
+            )
+            exp_training_args.init_default_callbacks(seed_dir)
+
+            experiment = get_experiment(
+                cfg['experiment_type'],
+                exp_training_args,
+                cfg['target'],
+                dataprocessor
+            )
+
+            model, epoch_metrics = experiment.train_and_validate(
+                cfg['train_df'],
+                cfg['val_df'],
+                seed_dir
+            )
+
+            experimenter._save_model(model, seed_dir)
+
+            test_metrics = experiment.test(
+                model,
+                cfg['test_df'],
+                seed_dir,
+                cfg['training_args_dict'].get('wandb_plot_logging', False)
+            )
+
+            if wandb.run is not None:
+                wandb.log(test_metrics)
+
+            experiment.plot_losses(seed_dir, cfg['training_args_dict'].get('wandb_plot_logging', False))
+
+            return {
+                'seed': cfg['seed'],
+                'status': 'success',
+                'metrics': {**epoch_metrics, **test_metrics},
+                'history': list(experiment.histories) if hasattr(experiment, 'histories') and experiment.histories else [],
+            }
+
+        finally:
+            if wandb.run is not None:
+                wandb.run.finish()
+            del model
+            gc.collect()
+            torch.cuda.empty_cache()
+
+    except torch.cuda.OutOfMemoryError:
+        gc.collect()
+        torch.cuda.empty_cache()
+        return {'seed': cfg['seed'], 'status': 'skipped', 'error': 'OOM'}
+
+    except Exception as e:
+        gc.collect()
+        torch.cuda.empty_cache()
+        return {
+            'seed': cfg['seed'],
+            'status': 'error',
+            'error': f'{type(e).__name__}: {e}',
+            'traceback': traceback.format_exc(),
+        }
+
+
+def _init_wandb_for_worker(
+    wandb_offline: bool,
+    seed_dir: str,
+    experiment_type: str,
+    seed: int,
+    timestamp: str,
+    group_name: str,
+    wandb_project_name: str
+) -> None:
+    """Initialize wandb in worker process."""
+    wandb.init(
+        project=wandb_project_name,
+        dir=seed_dir,
+        name=f"{experiment_type}_seed{seed}_{timestamp}",
+        group=group_name,
+        mode='offline' if wandb_offline else 'online'
+    )
+    wandb.config.update({
+        "experiment_type": experiment_type,
+        "seed": seed,
+        "group": group_name
+    })
+
+
+def create_summary_run(
+    aggregated: dict,
+    experiment_type: str,
+    n_seeds: int,
+    summary_group: str,
+    output_dir: str,
+    wandb_offline: bool,
+    wandb_project_name: str
+) -> None:
+    """
+    Create wandb summary run with ensemble statistics.
+
+    Args:
+        aggregated: Aggregated metrics dict with _mean and _std values
+        experiment_type: Name of the experiment
+        n_seeds: Number of successful seeds
+        summary_group: Group name for the summary run
+        output_dir: Directory to save local wandb files
+        wandb_offline: If True, wandb will be in offline mode
+        wandb_project_name: WandB project name
+    """
+    wandb.init(
+        project=wandb_project_name,
+        name=f"{experiment_type}_ensemble_summary",
+        group=summary_group,
+        mode='offline' if wandb_offline else 'online'
+    )
+
+    wandb.config.update({'n_seeds': n_seeds, 'experiment_type': experiment_type})
+
+    key_metrics = [
+        'test_Horizon_accuracy',
+        'test_Horizon_topk_accuracy',
+        'test_Depth_IoU',
+        'test_Bodenart_accuracy',
+        'val_loss',
+    ]
+
+    summary_data = {}
+    for key in key_metrics:
+        mean_key = f'{key}_mean'
+        std_key = f'{key}_std'
+        if mean_key in aggregated:
+            summary_data[f'ensemble_{key}_mean'] = aggregated[mean_key]
+            summary_data[f'ensemble_{key}_std'] = aggregated[std_key]
+
+    if summary_data:
+        wandb.summary.update(summary_data)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    valid_metrics = []
+    for key in key_metrics:
+        mean_key = f'{key}_mean'
+        std_key = f'{key}_std'
+        if mean_key in aggregated:
+            valid_metrics.append((
+                key.replace('test_', '').replace('_', ' ').title(),
+                aggregated[mean_key],
+                aggregated.get(std_key, 0)
+            ))
+
+    if valid_metrics:
+        labels = [m[0] for m in valid_metrics]
+        means = [m[1] for m in valid_metrics]
+        stds = [m[2] for m in valid_metrics]
+
+        ax.barh(labels, means, xerr=stds, capsize=5, color='steelblue', alpha=0.7)
+        ax.set_xlabel('Value')
+        ax.set_title(f'{experiment_type} Ensemble (n={n_seeds})')
+        ax.grid(axis='x', alpha=0.3)
+
+        for i, (mean, std) in enumerate(zip(means, stds)):
+            ax.text(mean + std + 0.01, i, f'{mean:.3f} ± {std:.3f}', va='center', fontsize=9)
+
+    plt.tight_layout()
+
+    wandb.log({'ensemble_summary': wandb.Image(fig)})
+
+    wandb.finish()
+    plt.close(fig)

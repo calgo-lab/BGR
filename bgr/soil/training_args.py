@@ -72,6 +72,52 @@ class TrainingArgs:
         
         return training_args
     
+    @staticmethod
+    def create_from_dict(args_dict: dict, device: str = 'cuda') -> 'TrainingArgs':
+        """
+        Create TrainingArgs from a dictionary (used by parallel workers).
+        
+        Args:
+            args_dict: Dictionary of training arguments.
+            device: Target device string (e.g., 'cuda:0', 'cuda:1').
+        
+        Returns:
+            TrainingArgs: Configured training arguments.
+        """
+        training_args = TrainingArgs(device=device)
+        
+        for var_name, value in args_dict.items():
+            if var_name == 'device':
+                continue
+            if var_name == 'hyperparameters' and isinstance(value, dict):
+                training_args.hyperparameters = value
+            elif var_name == 'callbacks':
+                continue
+            elif var_name in ['learning_rate', 'weight_decay', 'dropout', 'batch_size',
+                              'num_workers', 'num_epochs', 'save_checkpoints',
+                              'use_early_stopping', 'early_stopping_patience',
+                              'early_stopping_min_delta']:
+                if value is not None:
+                    setattr(training_args, var_name, value)
+        
+        return training_args
+    
+    @staticmethod
+    def create_from_args_with_device(args: Namespace, device: str) -> 'TrainingArgs':
+        """
+        Create TrainingArgs from args with a specific device.
+        
+        Args:
+            args: Namespace with command line arguments.
+            device: Target device string (e.g., 'cuda:0').
+        
+        Returns:
+            TrainingArgs: Configured training arguments with specified device.
+        """
+        training_args = TrainingArgs.create_from_args(args)
+        training_args.device = device
+        return training_args
+    
     def init_default_callbacks(self, model_output_dir : str) -> None:
         self.callbacks = []
         
