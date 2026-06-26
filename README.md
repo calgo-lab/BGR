@@ -3,7 +3,10 @@
 * [Paper link](https://doi.org/10.1016/j.geoderma.2026.117684)
 * [Preprint (arXiv)](https://doi.org/10.48550/arXiv.2508.03785)
 
-**Authors:** Vipin Singh, Teodor Chiaburu, Einar Eberhardt, Stefan Broda, Joey Prüssing, Frank Hausser, Felix Biessmann
+**Authors:** Vipin Singh¹, Teodor Chiaburu¹, Einar Eberhardt, Stefan Broda, Joey Prüssing, Frank Hausser², Felix Biessmann²
+
+¹Equal Contribution,
+²Equal Supervision
 
 **Citation**:
 If you use this repository, please consider citing our paper:
